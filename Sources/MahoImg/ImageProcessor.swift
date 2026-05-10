@@ -1,6 +1,6 @@
-import CoreGraphics
+import AppKit
 import Foundation
-import ImageIO
+import PDFKit
 import UniformTypeIdentifiers
 
 enum ImageProcessorError: LocalizedError {
@@ -173,45 +173,26 @@ struct ImageProcessor {
     }
 
     private static func rasterizedPDFInputURL(_ inputURL: URL, pageIndex: Int) throws -> URL {
-        guard let document = CGPDFDocument(inputURL as CFURL),
-              let page = document.page(at: pageIndex + 1) else {
+        guard let document = PDFDocument(url: inputURL),
+              let page = document.page(at: pageIndex) else {
             throw ImageProcessorError.pdfRenderFailed
         }
 
-        let bounds = page.getBoxRect(.mediaBox)
+        let bounds = page.bounds(for: .mediaBox)
         let width = max(1, Int(bounds.width.rounded(.up)))
         let height = max(1, Int(bounds.height.rounded(.up)))
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
+        let image = page.thumbnail(of: CGSize(width: width, height: height), for: .mediaBox)
+
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let data = bitmap.representation(using: .png, properties: [:]) else {
             throw ImageProcessorError.pdfRenderFailed
         }
 
-        context.setFillColor(CGColor(gray: 1, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        context.translateBy(x: -bounds.minX, y: -bounds.minY)
-        context.drawPDFPage(page)
-
-        guard let image = context.makeImage() else {
-            throw ImageProcessorError.pdfRenderFailed
-        }
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("MahoImg-\(UUID().uuidString)")
             .appendingPathExtension("png")
-        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
-            throw ImageProcessorError.pdfRenderFailed
-        }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else {
-            throw ImageProcessorError.pdfRenderFailed
-        }
+        try data.write(to: url, options: .atomic)
         return url
     }
 }
