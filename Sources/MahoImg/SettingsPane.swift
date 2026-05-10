@@ -123,12 +123,14 @@ struct SettingsPane: View {
 private struct CropControls: View {
     @EnvironmentObject private var state: AppState
     @ObservedObject var job: ImageJob
+    private let labelWidth = 44.0
 
     var body: some View {
         if job.pageCount > 1 {
             HStack {
                 Text("ページ")
-                    .frame(width: 32, alignment: .leading)
+                    .lineLimit(1)
+                    .frame(width: labelWidth, alignment: .leading)
                 TextField("ページ", value: pageBinding, format: .number)
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
@@ -144,13 +146,13 @@ private struct CropControls: View {
         Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
             GridRow {
                 Text("X")
-                    .frame(width: 32, alignment: .leading)
+                    .frame(width: labelWidth, alignment: .leading)
                 TextField("X", value: cropXBinding, format: .number)
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .monospacedDigit()
                 Text("Y")
-                    .frame(width: 32, alignment: .leading)
+                    .frame(width: labelWidth, alignment: .leading)
                 TextField("Y", value: cropYBinding, format: .number)
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
@@ -158,13 +160,13 @@ private struct CropControls: View {
             }
             GridRow {
                 Text("幅")
-                    .frame(width: 32, alignment: .leading)
+                    .frame(width: labelWidth, alignment: .leading)
                 TextField("幅", value: cropWidthBinding, format: .number)
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .monospacedDigit()
                 Text("高さ")
-                    .frame(width: 32, alignment: .leading)
+                    .frame(width: labelWidth, alignment: .leading)
                 TextField("高さ", value: cropHeightBinding, format: .number)
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
@@ -247,7 +249,7 @@ private struct PixelInputRow: View {
     var body: some View {
         HStack {
             Text(label)
-                .frame(width: 32, alignment: .leading)
+                .frame(width: 44, alignment: .leading)
             TextField(label, value: $value, format: .number)
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)

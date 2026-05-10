@@ -1,8 +1,12 @@
 # MahoImg
 
+<img src="Assets/AppIcon.png" alt="MahoImg icon" width="256" style="display:block; margin:2rem auto;">
+
 MahoImg は、画像や PDF をまとめて変換するための macOS アプリです。JPEG、PNG、WebP への書き出し、リサイズ、トリミング、余白追加、ファイル名の接頭辞/接尾辞付けができます。
 
 MahoImg is a macOS app for converting images and PDFs in batches. It can export to JPEG, PNG, or WebP, resize files, crop previews, add padding, and apply filename prefixes or suffixes.
+
+![MahoImg screenshot](docs/screenshot-main.png)
 
 ## できること / What It Does
 

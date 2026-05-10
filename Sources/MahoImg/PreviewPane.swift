@@ -142,21 +142,7 @@ private struct CropCanvas: NSViewRepresentable {
             return nil
         }
 
-        let image = NSImage(size: job.pixelSize)
-        image.lockFocus()
-        NSColor.white.setFill()
-        NSRect(origin: .zero, size: job.pixelSize).fill()
-        guard let context = NSGraphicsContext.current?.cgContext else {
-            image.unlockFocus()
-            return image
-        }
-        context.saveGState()
-        context.translateBy(x: 0, y: job.pixelSize.height)
-        context.scaleBy(x: 1, y: -1)
-        page.draw(with: .mediaBox, to: context)
-        context.restoreGState()
-        image.unlockFocus()
-        return image
+        return page.thumbnail(of: job.pixelSize, for: .mediaBox)
     }
 }
 
@@ -287,7 +273,7 @@ private final class CropCanvasView: NSView {
 
     private func drawPreviewImage(_ image: NSImage, in imageFrame: CGRect, verticallyFlipped: Bool) {
         guard verticallyFlipped else {
-            image.draw(in: imageFrame, from: .zero, operation: .sourceOver, fraction: 1)
+            image.draw(in: imageFrame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             return
         }
 
