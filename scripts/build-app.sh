@@ -6,6 +6,8 @@ APP_DIR="$ROOT_DIR/dist/MahoImg.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
+APP_VERSION="$(<"$ROOT_DIR/VERSION")"
+BUILD_NUMBER="1"
 
 cd "$ROOT_DIR"
 swift build -c release
@@ -17,7 +19,7 @@ cp ".build/release/MahoImg" "$MACOS_DIR/MahoImg"
 chmod +x "$MACOS_DIR/MahoImg"
 cp "Assets/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 
-cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
+cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -35,9 +37,9 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>$APP_VERSION</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
