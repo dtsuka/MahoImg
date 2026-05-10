@@ -36,6 +36,18 @@ final class PreviewMapperTests: XCTestCase {
 }
 
 final class ImageProcessorTests: XCTestCase {
+    func testSupportsPhotoshopDocuments() {
+        XCTAssertTrue(ImageProcessor.isSupportedImage(URL(fileURLWithPath: "/tmp/design.psd")))
+        XCTAssertTrue(ImageProcessor.isSupportedImage(URL(fileURLWithPath: "/tmp/large-design.psb")))
+    }
+
+    func testPhotoshopDocumentUsesFirstImageOnly() {
+        XCTAssertEqual(
+            ImageProcessor.inputArgument(for: URL(fileURLWithPath: "/tmp/layered.psd")),
+            "/tmp/layered.psd[0]"
+        )
+    }
+
     func testOutputURLRenamesConflicts() throws {
         var settings = ConversionSettings()
         settings.outputFormat = .webp
@@ -92,4 +104,3 @@ final class ImageProcessorTests: XCTestCase {
         ])
     }
 }
-

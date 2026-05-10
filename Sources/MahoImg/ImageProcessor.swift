@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 enum ImageProcessorError: LocalizedError {
     case missingMagick
@@ -20,10 +21,25 @@ enum ImageProcessorError: LocalizedError {
 struct ImageProcessor {
     static let magickPath = "/opt/homebrew/bin/magick"
 
-    static let supportedExtensions = Set(["jpg", "jpeg", "png", "webp", "heic", "heif", "tif", "tiff"])
+    static let supportedExtensions = Set(["jpg", "jpeg", "png", "webp", "heic", "heif", "tif", "tiff", "psd", "psb"])
+    static let selectableContentTypes: [UTType] = {
+        let explicitTypes = supportedExtensions.compactMap { UTType(filenameExtension: $0) }
+        return [.image, .folder] + explicitTypes
+    }()
 
     static func isSupportedImage(_ url: URL) -> Bool {
         supportedExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    static func isPhotoshopDocument(_ url: URL) -> Bool {
+        ["psd", "psb"].contains(url.pathExtension.lowercased())
+    }
+
+    static func inputArgument(for inputURL: URL) -> String {
+        if isPhotoshopDocument(inputURL) {
+            return "\(inputURL.path)[0]"
+        }
+        return inputURL.path
     }
 
     static func outputURL(
@@ -60,7 +76,7 @@ struct ImageProcessor {
     }
 
     static func arguments(inputURL: URL, outputURL: URL, settings: ConversionSettings, cropRect: CropRect) -> [String] {
-        var args = [inputURL.path, "-auto-orient"]
+        var args = [inputArgument(for: inputURL), "-auto-orient"]
         let crop = cropRect.clamped(to: CGSize(width: max(cropRect.x + cropRect.width, cropRect.width), height: max(cropRect.y + cropRect.height, cropRect.height)))
         if crop.width > 0, crop.height > 0 {
             args += [

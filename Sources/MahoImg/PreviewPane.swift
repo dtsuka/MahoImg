@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftUI
 
 struct PreviewPane: View {
@@ -117,8 +118,17 @@ private struct CropCanvas: NSViewRepresentable {
 
     func updateNSView(_ nsView: CropCanvasView, context: Context) {
         nsView.job = job
-        nsView.image = NSImage(contentsOf: job.inputURL)
+        nsView.image = Self.previewImage(for: job)
         nsView.needsDisplay = true
+    }
+
+    private static func previewImage(for job: ImageJob) -> NSImage? {
+        if let source = CGImageSourceCreateWithURL(job.inputURL as CFURL, nil),
+           let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+            return NSImage(cgImage: cgImage, size: job.pixelSize)
+        }
+
+        return NSImage(contentsOf: job.inputURL)
     }
 }
 
@@ -149,7 +159,7 @@ private final class CropCanvasView: NSView {
         let cropFrame = mapper.viewRect(from: job.cropRect)
 
         NSGraphicsContext.current?.imageInterpolation = .high
-        image.draw(in: imageFrame, from: .zero, operation: .sourceOver, fraction: 1)
+        drawPreviewImage(image, in: imageFrame, verticallyFlipped: ImageProcessor.isPhotoshopDocument(job.inputURL))
 
         let dimPath = NSBezierPath(rect: imageFrame)
         dimPath.append(NSBezierPath(rect: cropFrame))
@@ -245,6 +255,21 @@ private final class CropCanvasView: NSView {
         NSColor.white.setStroke()
         handle.lineWidth = 1
         handle.stroke()
+    }
+
+    private func drawPreviewImage(_ image: NSImage, in imageFrame: CGRect, verticallyFlipped: Bool) {
+        guard verticallyFlipped else {
+            image.draw(in: imageFrame, from: .zero, operation: .sourceOver, fraction: 1)
+            return
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        let transform = NSAffineTransform()
+        transform.translateX(by: 0, yBy: imageFrame.minY + imageFrame.maxY)
+        transform.scaleX(by: 1, yBy: -1)
+        transform.concat()
+        image.draw(in: imageFrame, from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 

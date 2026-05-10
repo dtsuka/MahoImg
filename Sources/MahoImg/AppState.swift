@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 
 @MainActor
 final class AppState: ObservableObject {
@@ -96,6 +97,13 @@ final class AppState: ObservableObject {
     }
 
     private static func pixelSize(for url: URL) -> CGSize? {
+        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let width = properties[kCGImagePropertyPixelWidth] as? Double,
+           let height = properties[kCGImagePropertyPixelHeight] as? Double {
+            return CGSize(width: width, height: height)
+        }
+
         guard let image = NSImage(contentsOf: url) else { return nil }
         if let rep = image.representations.first {
             return CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)

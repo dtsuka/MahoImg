@@ -106,7 +106,7 @@ struct JobListView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.image, .folder]
+        panel.allowedContentTypes = ImageProcessor.selectableContentTypes
         panel.prompt = "追加"
         if panel.runModal() == .OK {
             state.addURLs(panel.urls)
