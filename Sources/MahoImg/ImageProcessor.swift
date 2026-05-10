@@ -14,7 +14,7 @@ enum ImageProcessorError: LocalizedError {
         case .missingMagick:
             "/opt/homebrew/bin/magick が見つかりません。Homebrew版 ImageMagick をインストールしてください。"
         case .invalidOutputFolder:
-            "保存先フォルダが見つかりません。"
+            "保存先フォルダが見つかりません。保存先を選び直してください。"
         case .pdfRenderFailed:
             "PDFページの読み込みに失敗しました。"
         case .processFailed(let message):

@@ -127,11 +127,12 @@ struct JobRow: View {
                     .lineLimit(1)
                 Text(detailText)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .foregroundStyle(detailColor)
+                    .lineLimit(2)
             }
         }
         .padding(.vertical, 3)
+        .help(helpText)
     }
 
     private var iconName: String {
@@ -154,10 +155,31 @@ struct JobRow: View {
 
     private var detailText: String {
         let size = "\(Int(job.pixelSize.width)) x \(Int(job.pixelSize.height))"
-        if let pageLabel = job.pageLabel {
-            return "\(size) ・ \(pageLabel) ・ \(job.status.label)"
+        if case .failed(let message) = job.status {
+            return "\(baseDetail(size: size)) ・ 失敗: \(message.trimmingCharacters(in: .whitespacesAndNewlines))"
         }
-        return "\(size) ・ \(job.status.label)"
+        return "\(baseDetail(size: size)) ・ \(job.status.label)"
+    }
+
+    private var detailColor: Color {
+        if case .failed = job.status {
+            return .red
+        }
+        return .secondary
+    }
+
+    private var helpText: String {
+        if case .failed(let message) = job.status {
+            return message.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return job.displayName
+    }
+
+    private func baseDetail(size: String) -> String {
+        if let pageLabel = job.pageLabel {
+            return "\(size) ・ \(pageLabel)"
+        }
+        return size
     }
 }
 
