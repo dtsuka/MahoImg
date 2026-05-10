@@ -123,9 +123,9 @@ struct JobRow: View {
                 .foregroundStyle(iconColor)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(job.inputURL.lastPathComponent)
+                Text(job.displayName)
                     .lineLimit(1)
-                Text("\(Int(job.pixelSize.width)) x \(Int(job.pixelSize.height)) ・ \(job.status.label)")
+                Text(detailText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -150,6 +150,14 @@ struct JobRow: View {
         case .succeeded: .green
         case .failed: .red
         }
+    }
+
+    private var detailText: String {
+        let size = "\(Int(job.pixelSize.width)) x \(Int(job.pixelSize.height))"
+        if let pageLabel = job.pageLabel {
+            return "\(size) ・ \(pageLabel) ・ \(job.status.label)"
+        }
+        return "\(size) ・ \(job.status.label)"
     }
 }
 

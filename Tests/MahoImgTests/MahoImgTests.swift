@@ -41,11 +41,19 @@ final class ImageProcessorTests: XCTestCase {
         XCTAssertTrue(ImageProcessor.isSupportedImage(URL(fileURLWithPath: "/tmp/large-design.psb")))
     }
 
+    func testSupportsPDFDocuments() {
+        XCTAssertTrue(ImageProcessor.isSupportedImage(URL(fileURLWithPath: "/tmp/catalog.pdf")))
+    }
+
     func testPhotoshopDocumentUsesFirstImageOnly() {
         XCTAssertEqual(
             ImageProcessor.inputArgument(for: URL(fileURLWithPath: "/tmp/layered.psd")),
             "/tmp/layered.psd[0]"
         )
+    }
+
+    func testPDFDocumentsAreRasterizedBeforeImageMagick() {
+        XCTAssertTrue(ImageProcessor.needsPDFRasterization(URL(fileURLWithPath: "/tmp/catalog.pdf")))
     }
 
     func testOutputURLRenamesConflicts() throws {
@@ -66,6 +74,20 @@ final class ImageProcessorTests: XCTestCase {
         }
 
         XCTAssertEqual(output.path, "/tmp/th_photo_small_2.webp")
+    }
+
+    func testOutputURLAddsPageSuffixForMultiPageDocuments() throws {
+        var settings = ConversionSettings()
+        settings.outputFormat = .webp
+
+        let output = try ImageProcessor.outputURL(
+            for: URL(fileURLWithPath: "/tmp/catalog.pdf"),
+            settings: settings,
+            pageIndex: 2,
+            pageCount: 12
+        )
+
+        XCTAssertEqual(output.path, "/tmp/catalog_p003.webp")
     }
 
     func testBuildsWebPFitArgumentsWithQualityAndPadding() {

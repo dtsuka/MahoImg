@@ -146,12 +146,26 @@ enum JobStatus: Equatable {
 final class ImageJob: ObservableObject, Identifiable {
     let id = UUID()
     let inputURL: URL
-    let pixelSize: CGSize
+    let pageCount: Int
+    @Published var pageIndex: Int
+    @Published var pixelSize: CGSize
     @Published var cropRect: CropRect
     @Published var status: JobStatus = .pending
 
-    init(inputURL: URL, pixelSize: CGSize) {
+    var displayName: String {
+        guard pageCount > 1 else { return inputURL.lastPathComponent }
+        return "\(inputURL.lastPathComponent) p.\(pageIndex + 1)"
+    }
+
+    var pageLabel: String? {
+        guard pageCount > 1 else { return nil }
+        return "\(pageIndex + 1)/\(pageCount) ページ"
+    }
+
+    init(inputURL: URL, pixelSize: CGSize, pageIndex: Int = 0, pageCount: Int = 1) {
         self.inputURL = inputURL
+        self.pageIndex = pageIndex
+        self.pageCount = pageCount
         self.pixelSize = pixelSize
         self.cropRect = .full(size: pixelSize)
     }

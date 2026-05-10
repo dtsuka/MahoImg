@@ -125,6 +125,22 @@ private struct CropControls: View {
     @ObservedObject var job: ImageJob
 
     var body: some View {
+        if job.pageCount > 1 {
+            HStack {
+                Text("ページ")
+                    .frame(width: 32, alignment: .leading)
+                TextField("ページ", value: pageBinding, format: .number)
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .monospacedDigit()
+                    .frame(width: 64)
+                Stepper("ページ", value: pageBinding, in: 1...job.pageCount)
+                    .labelsHidden()
+                Text("/ \(job.pageCount)")
+                    .foregroundStyle(.secondary)
+            }
+        }
+
         Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
             GridRow {
                 Text("X")
@@ -160,6 +176,13 @@ private struct CropControls: View {
         } label: {
             Label("全体に戻す", systemImage: "arrow.counterclockwise")
         }
+    }
+
+    private var pageBinding: Binding<Int> {
+        Binding(
+            get: { job.pageIndex + 1 },
+            set: { state.setPage($0 - 1, for: job) }
+        )
     }
 
     private var cropXBinding: Binding<Int> {

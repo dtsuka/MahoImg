@@ -1,9 +1,12 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import UniformTypeIdentifiers
 
 enum ImageProcessorError: LocalizedError {
     case missingMagick
     case invalidOutputFolder
+    case pdfRenderFailed
     case processFailed(String)
 
     var errorDescription: String? {
@@ -12,6 +15,8 @@ enum ImageProcessorError: LocalizedError {
             "/opt/homebrew/bin/magick が見つかりません。Homebrew版 ImageMagick をインストールしてください。"
         case .invalidOutputFolder:
             "保存先フォルダが見つかりません。"
+        case .pdfRenderFailed:
+            "PDFページの読み込みに失敗しました。"
         case .processFailed(let message):
             message
         }
@@ -21,10 +26,10 @@ enum ImageProcessorError: LocalizedError {
 struct ImageProcessor {
     static let magickPath = "/opt/homebrew/bin/magick"
 
-    static let supportedExtensions = Set(["jpg", "jpeg", "png", "webp", "heic", "heif", "tif", "tiff", "psd", "psb"])
+    static let supportedExtensions = Set(["jpg", "jpeg", "png", "webp", "heic", "heif", "tif", "tiff", "psd", "psb", "pdf"])
     static let selectableContentTypes: [UTType] = {
         let explicitTypes = supportedExtensions.compactMap { UTType(filenameExtension: $0) }
-        return [.image, .folder] + explicitTypes
+        return [.image, .pdf, .folder] + explicitTypes
     }()
 
     static func isSupportedImage(_ url: URL) -> Bool {
@@ -35,7 +40,15 @@ struct ImageProcessor {
         ["psd", "psb"].contains(url.pathExtension.lowercased())
     }
 
-    static func inputArgument(for inputURL: URL) -> String {
+    static func isPDFDocument(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == "pdf"
+    }
+
+    static func needsPDFRasterization(_ url: URL) -> Bool {
+        isPDFDocument(url)
+    }
+
+    static func inputArgument(for inputURL: URL, pageIndex: Int = 0) -> String {
         if isPhotoshopDocument(inputURL) {
             return "\(inputURL.path)[0]"
         }
@@ -45,6 +58,8 @@ struct ImageProcessor {
     static func outputURL(
         for inputURL: URL,
         settings: ConversionSettings,
+        pageIndex: Int = 0,
+        pageCount: Int = 1,
         fileExists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
     ) throws -> URL {
         let folder: URL
@@ -58,7 +73,8 @@ struct ImageProcessor {
         }
 
         let base = inputURL.deletingPathExtension().lastPathComponent
-        let name = "\(settings.prefix)\(base)\(settings.suffix)"
+        let pageSuffix = pageCount > 1 ? String(format: "_p%03d", pageIndex + 1) : ""
+        let name = "\(settings.prefix)\(base)\(pageSuffix)\(settings.suffix)"
         let ext = settings.outputFormat.fileExtension
         let proposed = folder.appendingPathComponent(name).appendingPathExtension(ext)
 
@@ -75,8 +91,8 @@ struct ImageProcessor {
         return proposed
     }
 
-    static func arguments(inputURL: URL, outputURL: URL, settings: ConversionSettings, cropRect: CropRect) -> [String] {
-        var args = [inputArgument(for: inputURL), "-auto-orient"]
+    static func arguments(inputURL: URL, outputURL: URL, settings: ConversionSettings, cropRect: CropRect, pageIndex: Int = 0) -> [String] {
+        var args = [inputArgument(for: inputURL, pageIndex: pageIndex), "-auto-orient"]
         let crop = cropRect.clamped(to: CGSize(width: max(cropRect.x + cropRect.width, cropRect.width), height: max(cropRect.y + cropRect.height, cropRect.height)))
         if crop.width > 0, crop.height > 0 {
             args += [
@@ -118,18 +134,24 @@ struct ImageProcessor {
         return args
     }
 
-    static func run(inputURL: URL, outputURL: URL, settings: ConversionSettings, cropRect: CropRect) async throws {
+    static func run(inputURL: URL, outputURL: URL, settings: ConversionSettings, cropRect: CropRect, pageIndex: Int = 0) async throws {
         guard FileManager.default.isExecutableFile(atPath: magickPath) else {
             throw ImageProcessorError.missingMagick
         }
+        let rasterizedInputURL = try needsPDFRasterization(inputURL) ? rasterizedPDFInputURL(inputURL, pageIndex: pageIndex) : nil
+        let processInputURL = rasterizedInputURL ?? inputURL
+
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: magickPath)
-            process.arguments = arguments(inputURL: inputURL, outputURL: outputURL, settings: settings, cropRect: cropRect)
+            process.arguments = arguments(inputURL: processInputURL, outputURL: outputURL, settings: settings, cropRect: cropRect)
 
             let errorPipe = Pipe()
             process.standardError = errorPipe
             process.terminationHandler = { process in
+                if let rasterizedInputURL {
+                    try? FileManager.default.removeItem(at: rasterizedInputURL)
+                }
                 if process.terminationStatus == 0 {
                     continuation.resume()
                 } else {
@@ -142,8 +164,54 @@ struct ImageProcessor {
             do {
                 try process.run()
             } catch {
+                if let rasterizedInputURL {
+                    try? FileManager.default.removeItem(at: rasterizedInputURL)
+                }
                 continuation.resume(throwing: error)
             }
         }
+    }
+
+    private static func rasterizedPDFInputURL(_ inputURL: URL, pageIndex: Int) throws -> URL {
+        guard let document = CGPDFDocument(inputURL as CFURL),
+              let page = document.page(at: pageIndex + 1) else {
+            throw ImageProcessorError.pdfRenderFailed
+        }
+
+        let bounds = page.getBoxRect(.mediaBox)
+        let width = max(1, Int(bounds.width.rounded(.up)))
+        let height = max(1, Int(bounds.height.rounded(.up)))
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw ImageProcessorError.pdfRenderFailed
+        }
+
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.translateBy(x: -bounds.minX, y: -bounds.minY)
+        context.drawPDFPage(page)
+
+        guard let image = context.makeImage() else {
+            throw ImageProcessorError.pdfRenderFailed
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MahoImg-\(UUID().uuidString)")
+            .appendingPathExtension("png")
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            throw ImageProcessorError.pdfRenderFailed
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            throw ImageProcessorError.pdfRenderFailed
+        }
+        return url
     }
 }

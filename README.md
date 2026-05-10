@@ -35,7 +35,8 @@ The app icon source is `Assets/AppIcon.png`; the generated macOS icon file is `A
 ## Features
 
 - Drop image files or folders into the window.
-- Accept JPEG, PNG, WebP, HEIC/HEIF, TIFF, PSD, and PSB input files.
+- Accept JPEG, PNG, WebP, HEIC/HEIF, TIFF, PSD, PSB, and PDF input files.
+- Choose a PDF page or add every page as a separate item.
 - Convert to JPEG, PNG, or WebP.
 - Resize with none, fit, fill-crop, width, height, or exact size modes.
 - Crop by dragging the preview rectangle and resizing from its corner handles.

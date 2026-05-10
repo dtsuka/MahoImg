@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ImageIO
+import PDFKit
 
 @MainActor
 final class AppState: ObservableObject {
@@ -17,10 +18,9 @@ final class AppState: ObservableObject {
     }
 
     func addURLs(_ urls: [URL]) {
-        let imageURLs = urls.flatMap { resolvedImageURLs(from: $0) }
-        for url in imageURLs where !jobs.contains(where: { $0.inputURL == url }) {
-            guard let size = Self.pixelSize(for: url) else { continue }
-            jobs.append(ImageJob(inputURL: url, pixelSize: size))
+        let newJobs = urls.flatMap { resolvedJobs(from: $0) }
+        for job in newJobs where !jobs.contains(where: { $0.inputURL == job.inputURL && $0.pageIndex == job.pageIndex }) {
+            jobs.append(job)
         }
         if selectedJobID == nil {
             selectedJobID = jobs.first?.id
@@ -45,6 +45,16 @@ final class AppState: ObservableObject {
         selectedJob.cropRect = .full(size: selectedJob.pixelSize)
     }
 
+    func setPage(_ pageIndex: Int, for job: ImageJob) {
+        let clampedIndex = min(max(pageIndex, 0), job.pageCount - 1)
+        guard clampedIndex != job.pageIndex else { return }
+        guard let size = Self.pixelSize(for: job.inputURL, pageIndex: clampedIndex) else { return }
+        job.pageIndex = clampedIndex
+        job.pixelSize = size
+        job.cropRect = .full(size: size)
+        job.status = .pending
+    }
+
     func chooseOutputFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -67,8 +77,8 @@ final class AppState: ObservableObject {
             for job in jobs {
                 job.status = .processing
                 do {
-                    let outputURL = try ImageProcessor.outputURL(for: job.inputURL, settings: settings)
-                    try await ImageProcessor.run(inputURL: job.inputURL, outputURL: outputURL, settings: settings, cropRect: job.cropRect)
+                    let outputURL = try ImageProcessor.outputURL(for: job.inputURL, settings: settings, pageIndex: job.pageIndex, pageCount: job.pageCount)
+                    try await ImageProcessor.run(inputURL: job.inputURL, outputURL: outputURL, settings: settings, cropRect: job.cropRect, pageIndex: job.pageIndex)
                     job.status = .succeeded(outputURL)
                 } catch {
                     job.status = .failed(error.localizedDescription)
@@ -81,22 +91,90 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func resolvedImageURLs(from url: URL) -> [URL] {
+    private func resolvedJobs(from url: URL) -> [ImageJob] {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return [] }
         if isDirectory.boolValue {
             guard let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else {
                 return []
             }
-            return enumerator.compactMap { item in
-                guard let fileURL = item as? URL, ImageProcessor.isSupportedImage(fileURL) else { return nil }
-                return fileURL
-            }.sorted { $0.path < $1.path }
+            var resolved: [ImageJob] = []
+            for item in enumerator {
+                guard let fileURL = item as? URL, ImageProcessor.isSupportedImage(fileURL) else { continue }
+                resolved.append(contentsOf: resolvedJobs(from: fileURL))
+            }
+            return resolved.sorted {
+                if $0.inputURL == $1.inputURL {
+                    return $0.pageIndex < $1.pageIndex
+                }
+                return $0.inputURL.path < $1.inputURL.path
+            }
         }
-        return ImageProcessor.isSupportedImage(url) ? [url] : []
+        guard ImageProcessor.isSupportedImage(url) else { return [] }
+        return jobs(for: url)
     }
 
-    private static func pixelSize(for url: URL) -> CGSize? {
+    private func jobs(for url: URL) -> [ImageJob] {
+        if ImageProcessor.isPDFDocument(url) {
+            return pdfJobs(for: url)
+        }
+
+        guard let size = Self.pixelSize(for: url) else { return [] }
+        return [ImageJob(inputURL: url, pixelSize: size)]
+    }
+
+    private func pdfJobs(for url: URL) -> [ImageJob] {
+        guard let document = PDFDocument(url: url), document.pageCount > 0 else { return [] }
+        let pageCount = document.pageCount
+        if pageCount == 1 {
+            guard let size = Self.pdfPageSize(for: url, pageIndex: 0) else { return [] }
+            return [ImageJob(inputURL: url, pixelSize: size, pageCount: pageCount)]
+        }
+
+        switch multiPagePDFChoice(for: url, pageCount: pageCount) {
+        case .singleItem:
+            guard let size = Self.pdfPageSize(for: url, pageIndex: 0) else { return [] }
+            return [ImageJob(inputURL: url, pixelSize: size, pageCount: pageCount)]
+        case .allPages:
+            return (0..<pageCount).compactMap { pageIndex in
+                guard let size = Self.pdfPageSize(for: url, pageIndex: pageIndex) else { return nil }
+                return ImageJob(inputURL: url, pixelSize: size, pageIndex: pageIndex, pageCount: pageCount)
+            }
+        case .cancel:
+            return []
+        }
+    }
+
+    private enum MultiPagePDFChoice {
+        case singleItem
+        case allPages
+        case cancel
+    }
+
+    private func multiPagePDFChoice(for url: URL, pageCount: Int) -> MultiPagePDFChoice {
+        let alert = NSAlert()
+        alert.messageText = "このPDFには \(pageCount) ページあります。"
+        alert.informativeText = "どのように追加しますか？"
+        alert.addButton(withTitle: "ページを選んで追加")
+        alert.addButton(withTitle: "全ページを追加")
+        alert.addButton(withTitle: "キャンセル")
+        alert.icon = NSWorkspace.shared.icon(forFile: url.path)
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .singleItem
+        case .alertSecondButtonReturn:
+            return .allPages
+        default:
+            return .cancel
+        }
+    }
+
+    private static func pixelSize(for url: URL, pageIndex: Int = 0) -> CGSize? {
+        if ImageProcessor.isPDFDocument(url) {
+            return pdfPageSize(for: url, pageIndex: pageIndex)
+        }
+
         if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
            let width = properties[kCGImagePropertyPixelWidth] as? Double,
@@ -109,6 +187,14 @@ final class AppState: ObservableObject {
             return CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
         }
         return image.size
+    }
+
+    private static func pdfPageSize(for url: URL, pageIndex: Int) -> CGSize? {
+        guard let document = PDFDocument(url: url),
+              let page = document.page(at: pageIndex) else {
+            return nil
+        }
+        return page.bounds(for: .mediaBox).size
     }
 }
 

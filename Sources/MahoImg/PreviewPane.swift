@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import PDFKit
 import SwiftUI
 
 struct PreviewPane: View {
@@ -123,12 +124,39 @@ private struct CropCanvas: NSViewRepresentable {
     }
 
     private static func previewImage(for job: ImageJob) -> NSImage? {
+        if ImageProcessor.isPDFDocument(job.inputURL) {
+            return pdfPreviewImage(for: job)
+        }
+
         if let source = CGImageSourceCreateWithURL(job.inputURL as CFURL, nil),
            let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
             return NSImage(cgImage: cgImage, size: job.pixelSize)
         }
 
         return NSImage(contentsOf: job.inputURL)
+    }
+
+    private static func pdfPreviewImage(for job: ImageJob) -> NSImage? {
+        guard let document = PDFDocument(url: job.inputURL),
+              let page = document.page(at: job.pageIndex) else {
+            return nil
+        }
+
+        let image = NSImage(size: job.pixelSize)
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: job.pixelSize).fill()
+        guard let context = NSGraphicsContext.current?.cgContext else {
+            image.unlockFocus()
+            return image
+        }
+        context.saveGState()
+        context.translateBy(x: 0, y: job.pixelSize.height)
+        context.scaleBy(x: 1, y: -1)
+        page.draw(with: .mediaBox, to: context)
+        context.restoreGState()
+        image.unlockFocus()
+        return image
     }
 }
 
