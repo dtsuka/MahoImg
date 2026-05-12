@@ -8,16 +8,22 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "MahoImg", targets: ["MahoImg"])
+        .executable(name: "MahoImg", targets: ["MahoImg"]),
+        .library(name: "MahoImgCore", targets: ["MahoImgCore"])
     ],
     targets: [
+        .target(
+            name: "MahoImgCore",
+            path: "Sources/MahoImgCore"
+        ),
         .executableTarget(
             name: "MahoImg",
-            path: "Sources/MahoImg"
+            dependencies: ["MahoImgCore"],
+            path: "Sources/MahoImgApp"
         ),
         .testTarget(
             name: "MahoImgTests",
-            dependencies: ["MahoImg"],
+            dependencies: ["MahoImgCore"],
             path: "Tests/MahoImgTests"
         )
     ]

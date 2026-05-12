@@ -12,7 +12,7 @@ enum ImageProcessorError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingMagick:
-            "/opt/homebrew/bin/magick が見つかりません。Homebrew版 ImageMagick をインストールしてください。"
+            "ImageMagick の magick コマンドが見つかりません。ImageMagick をインストールしてください。"
         case .invalidOutputFolder:
             "保存先フォルダが見つかりません。保存先を選び直してください。"
         case .pdfRenderFailed:
@@ -24,7 +24,7 @@ enum ImageProcessorError: LocalizedError {
 }
 
 struct ImageProcessor {
-    static let magickPath = "/opt/homebrew/bin/magick"
+    static let magickPath = resolveMagickPath()
 
     static let supportedExtensions = Set(["jpg", "jpeg", "png", "webp", "heic", "heif", "tif", "tiff", "psd", "psb", "pdf"])
     static let selectableContentTypes: [UTType] = {
@@ -46,6 +46,32 @@ struct ImageProcessor {
 
     static func needsPDFRasterization(_ url: URL) -> Bool {
         isPDFDocument(url)
+    }
+
+    static func resolveMagickPath(
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        commonPaths: [String] = [
+            "/opt/homebrew/bin/magick",
+            "/usr/local/bin/magick"
+        ]
+    ) -> String {
+        if let path = commonPaths.first(where: { fileManager.isExecutableFile(atPath: $0) }) {
+            return path
+        }
+
+        let pathDirectories = environment["PATH"]?
+            .split(separator: ":")
+            .map(String.init) ?? []
+
+        for directory in pathDirectories {
+            let candidate = URL(fileURLWithPath: directory).appendingPathComponent("magick").path
+            if fileManager.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+
+        return commonPaths.first ?? "/opt/homebrew/bin/magick"
     }
 
     static func inputArgument(for inputURL: URL, pageIndex: Int = 0) -> String {

@@ -100,10 +100,12 @@ struct CropRect: Codable, Equatable {
     }
 
     func clamped(to size: CGSize, minimum: Double = 16) -> CropRect {
-        let maxWidth = max(minimum, Double(size.width))
-        let maxHeight = max(minimum, Double(size.height))
-        let newWidth = min(max(width, minimum), maxWidth)
-        let newHeight = min(max(height, minimum), maxHeight)
+        let effectiveMinWidth = min(minimum, Double(size.width))
+        let effectiveMinHeight = min(minimum, Double(size.height))
+        let maxWidth = Double(size.width)
+        let maxHeight = Double(size.height)
+        let newWidth = min(max(width, effectiveMinWidth), maxWidth)
+        let newHeight = min(max(height, effectiveMinHeight), maxHeight)
         let newX = min(max(x, 0), max(0, Double(size.width) - newWidth))
         let newY = min(max(y, 0), max(0, Double(size.height) - newHeight))
         return CropRect(x: newX, y: newY, width: newWidth, height: newHeight)

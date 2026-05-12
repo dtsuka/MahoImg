@@ -1,10 +1,12 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ContentView: View {
+public struct ContentView: View {
     @EnvironmentObject private var state: AppState
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         HStack(spacing: 0) {
             JobListView()
                 .frame(width: 260)
@@ -98,6 +100,18 @@ struct JobListView: View {
                 }
             }
             .listStyle(.sidebar)
+
+            Divider()
+
+            Button {
+                state.processAll()
+            } label: {
+                Label("一括変換", systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(state.jobs.isEmpty || state.isProcessing)
+            .padding(12)
         }
     }
 
@@ -192,12 +206,12 @@ struct BottomBar: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Button {
-                state.processAll()
+                state.processSelected()
             } label: {
-                Label("変換実行", systemImage: "play.fill")
+                Label("個別変換", systemImage: "play.fill")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(state.jobs.isEmpty || state.isProcessing)
+            .disabled(state.selectedJob == nil || state.isProcessing)
         }
     }
 }
