@@ -38,15 +38,17 @@ MahoImg is a macOS app for converting images and PDFs in batches. It can export 
 2. 左上の `+` ボタン、またはウィンドウへのドラッグ&ドロップで画像やフォルダを追加します。
 3. 右側のパネルで出力形式、品質、リサイズ、トリミング、余白、保存先、ファイル名を設定します。
 4. PDF が複数ページの場合は、追加時に「ページを選んで追加」または「全ページを追加」を選びます。
-5. `変換実行` を押します。
-6. 失敗した場合は、左側のリストに赤字で理由が表示されます。
+5. 左サイドバー下部の `一括変換` を押すと、リスト内のすべての画像を変換します。
+6. プレビュー下部の `個別変換` を押すと、現在選択中の画像だけを変換します。
+7. 失敗した場合は、左側のリストに赤字で理由が表示されます。
 
 1. Open the app.
 2. Add images or folders with the `+` button or by dropping them onto the window.
 3. Use the right-side panel to choose output format, quality, resize, crop, padding, save location, and filename options.
 4. For multi-page PDFs, choose either "add as one selectable-page item" or "add every page".
-5. Press `変換実行` to run conversion.
-6. If conversion fails, the reason appears in red in the left-side list.
+5. Press `一括変換` at the bottom of the left sidebar to convert every image in the list.
+6. Press `個別変換` below the preview to convert only the currently selected image.
+7. If conversion fails, the reason appears in red in the left-side list.
 
 ## ImageMagick のインストール / Installing ImageMagick
 
@@ -66,9 +68,9 @@ After installation, you can check it with:
 magick -version
 ```
 
-MahoImg は標準で Homebrew 版の `/opt/homebrew/bin/magick` を使用します。Homebrew が入っていない場合は、先に [Homebrew](https://brew.sh/) をインストールしてください。
+MahoImg は `/opt/homebrew/bin/magick`、`/usr/local/bin/magick`、PATH 上の `magick` の順に ImageMagick を探します。Homebrew が入っていない場合は、先に [Homebrew](https://brew.sh/) をインストールしてください。
 
-MahoImg uses the Homebrew path `/opt/homebrew/bin/magick` by default. If Homebrew is not installed, install [Homebrew](https://brew.sh/) first.
+MahoImg looks for ImageMagick at `/opt/homebrew/bin/magick`, `/usr/local/bin/magick`, then `magick` on PATH. If Homebrew is not installed, install [Homebrew](https://brew.sh/) first.
 
 ## 初回起動時の警告 / First Launch Warning
 
@@ -118,7 +120,7 @@ This is a macOS protection feature shown for personally distributed apps that ha
 
 - macOS 14 or later
 - Swift 6 toolchain / Xcode command line tools
-- ImageMagick at `/opt/homebrew/bin/magick`
+- ImageMagick at `/opt/homebrew/bin/magick`, `/usr/local/bin/magick`, or on PATH
 
 Check WebP support:
 

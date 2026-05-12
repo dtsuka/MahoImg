@@ -4,7 +4,7 @@ import ImageIO
 import PDFKit
 
 @MainActor
-final class AppState: ObservableObject {
+public final class AppState: ObservableObject {
     @Published var jobs: [ImageJob] = []
     @Published var selectedJobID: UUID?
     @Published var settings: ConversionSettings = SettingsStore.load() {
@@ -12,6 +12,8 @@ final class AppState: ObservableObject {
     }
     @Published var isProcessing = false
     @Published var progressText = "待機中"
+
+    public init() {}
 
     var selectedJob: ImageJob? {
         jobs.first { $0.id == selectedJobID }
@@ -68,13 +70,23 @@ final class AppState: ObservableObject {
     }
 
     func processAll() {
+        process(jobs, completionText: "完了")
+    }
+
+    func processSelected() {
+        guard let selectedJob else { return }
+        process([selectedJob], completionText: "個別変換完了")
+    }
+
+    private func process(_ targetJobs: [ImageJob], completionText: String) {
         guard !isProcessing else { return }
+        guard !targetJobs.isEmpty else { return }
         isProcessing = true
         progressText = "開始中"
 
         Task {
             var completed = 0
-            for job in jobs {
+            for job in targetJobs {
                 job.status = .processing
                 do {
                     let outputURL = try ImageProcessor.outputURL(for: job.inputURL, settings: settings, pageIndex: job.pageIndex, pageCount: job.pageCount)
@@ -84,10 +96,10 @@ final class AppState: ObservableObject {
                     job.status = .failed(error.localizedDescription)
                 }
                 completed += 1
-                progressText = "\(completed)/\(jobs.count) 完了"
+                progressText = "\(completed)/\(targetJobs.count) 完了"
             }
             isProcessing = false
-            progressText = "完了"
+            progressText = completionText
         }
     }
 

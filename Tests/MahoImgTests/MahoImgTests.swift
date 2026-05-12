@@ -1,7 +1,19 @@
 import CoreGraphics
 import Foundation
-@testable import MahoImg
+@testable import MahoImgCore
 import XCTest
+
+final class CropRectTests: XCTestCase {
+    func testClampedNeverExceedsImageWhenImageSmallerThanMinimum() {
+        let tiny = CGSize(width: 10, height: 8)
+        let rect = CropRect(x: 0, y: 0, width: 4, height: 3)
+        let clamped = rect.clamped(to: tiny, minimum: 16)
+        XCTAssertEqual(clamped.width, 10, accuracy: 0.001)
+        XCTAssertEqual(clamped.height, 8, accuracy: 0.001)
+        XCTAssertEqual(clamped.x + clamped.width, 10, accuracy: 0.001)
+        XCTAssertEqual(clamped.y + clamped.height, 8, accuracy: 0.001)
+    }
+}
 
 final class PreviewMapperTests: XCTestCase {
     func testMapsLandscapeImageIntoLetterboxedViewport() {
@@ -36,6 +48,44 @@ final class PreviewMapperTests: XCTestCase {
 }
 
 final class ImageProcessorTests: XCTestCase {
+    func testResolvesMagickFromPathEnvironment() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let magick = directory.appendingPathComponent("magick")
+        try Data().write(to: magick)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: magick.path)
+
+        XCTAssertEqual(
+            ImageProcessor.resolveMagickPath(
+                environment: ["PATH": directory.path],
+                commonPaths: ["/definitely/not/a/real/magick"]
+            ),
+            magick.path
+        )
+    }
+
+    func testResolvesMagickToDefaultFallbackWhenNotFound() {
+        XCTAssertEqual(
+            ImageProcessor.resolveMagickPath(
+                environment: ["PATH": "/definitely/not/a/real/path"],
+                commonPaths: ["/custom/fallback/magick"]
+            ),
+            "/custom/fallback/magick"
+        )
+    }
+
+    func testResolvesMagickToHomebrewFallbackWhenNoCandidatesExist() {
+        XCTAssertEqual(
+            ImageProcessor.resolveMagickPath(
+                environment: ["PATH": "/definitely/not/a/real/path"],
+                commonPaths: []
+            ),
+            "/opt/homebrew/bin/magick"
+        )
+    }
+
     func testSupportsPhotoshopDocuments() {
         XCTAssertTrue(ImageProcessor.isSupportedImage(URL(fileURLWithPath: "/tmp/design.psd")))
         XCTAssertTrue(ImageProcessor.isSupportedImage(URL(fileURLWithPath: "/tmp/large-design.psb")))

@@ -89,7 +89,6 @@ struct SettingsPane: View {
             }
         }
         .formStyle(.grouped)
-        .padding(.vertical, 8)
     }
 
     private var qualityBinding: Binding<Double> {
