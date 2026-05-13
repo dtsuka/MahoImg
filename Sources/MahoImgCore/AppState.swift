@@ -81,8 +81,8 @@ public final class AppState: ObservableObject {
 
     func showMissingMagickGuideIfNeeded() {
         guard !didShowMissingMagickGuide else { return }
-        didShowMissingMagickGuide = true
         guard !ImageProcessor.isMagickAvailable() else { return }
+        didShowMissingMagickGuide = true
 
         let alert = NSAlert()
         alert.alertStyle = .warning
