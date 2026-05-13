@@ -12,6 +12,7 @@ public final class AppState: ObservableObject {
     }
     @Published var isProcessing = false
     @Published var progressText = "待機中"
+    private var didShowMissingMagickGuide = false
 
     public init() {}
 
@@ -76,6 +77,19 @@ public final class AppState: ObservableObject {
     func processSelected() {
         guard let selectedJob else { return }
         process([selectedJob], completionText: "個別変換完了")
+    }
+
+    func showMissingMagickGuideIfNeeded() {
+        guard !didShowMissingMagickGuide else { return }
+        didShowMissingMagickGuide = true
+        guard !ImageProcessor.isMagickAvailable() else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "ImageMagick が見つかりません"
+        alert.informativeText = ImageProcessor.magickInstallGuide
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     private func process(_ targetJobs: [ImageJob], completionText: String) {

@@ -26,6 +26,23 @@ struct SettingsPane: View {
                 }
             }
 
+            Section("保存先") {
+                Picker("場所", selection: $state.settings.saveLocation) {
+                    ForEach(SaveLocation.allCases) { location in
+                        Text(location.rawValue).tag(location)
+                    }
+                }
+                Button {
+                    state.chooseOutputFolder()
+                } label: {
+                    Label("保存先を選択", systemImage: "folder")
+                }
+                Text(state.settings.chosenFolderPath.isEmpty ? "未選択" : state.settings.chosenFolderPath)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
             Section("リサイズ") {
                 Picker("モード", selection: $state.settings.resizeMode) {
                     ForEach(ResizeMode.allCases) { mode in
@@ -57,23 +74,6 @@ struct SettingsPane: View {
                 Toggle("余白を追加", isOn: $state.settings.paddingEnabled)
                 PixelInputRow(label: "幅", value: $state.settings.paddingPixels)
                 ColorPicker("色", selection: paddingColorBinding, supportsOpacity: false)
-            }
-
-            Section("保存先") {
-                Picker("場所", selection: $state.settings.saveLocation) {
-                    ForEach(SaveLocation.allCases) { location in
-                        Text(location.rawValue).tag(location)
-                    }
-                }
-                Button {
-                    state.chooseOutputFolder()
-                } label: {
-                    Label("保存先を選択", systemImage: "folder")
-                }
-                Text(state.settings.chosenFolderPath.isEmpty ? "未選択" : state.settings.chosenFolderPath)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
             }
 
             Section("ファイル名") {
