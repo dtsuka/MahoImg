@@ -32,6 +32,9 @@ public struct ContentView: View {
                 .background(Color(nsColor: .controlBackgroundColor))
         }
         .onDrop(of: [.fileURL], isTargeted: nil, perform: handleDrop(providers:))
+        .onAppear {
+            state.showMissingMagickGuideIfNeeded()
+        }
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {

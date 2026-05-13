@@ -25,6 +25,17 @@ enum ImageProcessorError: LocalizedError {
 
 struct ImageProcessor {
     static let magickPath = resolveMagickPath()
+    static let magickInstallGuide = """
+    WebP 書き出しなどの変換処理には ImageMagick が必要です。Homebrew を使っている場合は、ターミナルで次を実行してください。
+
+    brew install imagemagick
+
+    インストール後、次のコマンドで確認できます。
+
+    magick -version
+
+    MahoImg は /opt/homebrew/bin/magick、/usr/local/bin/magick、PATH 上の magick の順に ImageMagick を探します。Homebrew が入っていない場合は、先に Homebrew をインストールしてください。
+    """
 
     static let supportedExtensions = Set(["jpg", "jpeg", "png", "webp", "heic", "heif", "tif", "tiff", "psd", "psb", "pdf"])
     static let selectableContentTypes: [UTType] = {
@@ -46,6 +57,10 @@ struct ImageProcessor {
 
     static func needsPDFRasterization(_ url: URL) -> Bool {
         isPDFDocument(url)
+    }
+
+    static func isMagickAvailable(path: String = magickPath, fileManager: FileManager = .default) -> Bool {
+        fileManager.isExecutableFile(atPath: path)
     }
 
     static func resolveMagickPath(

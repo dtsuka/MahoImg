@@ -86,6 +86,10 @@ final class ImageProcessorTests: XCTestCase {
         )
     }
 
+    func testDetectsMissingMagickPath() {
+        XCTAssertFalse(ImageProcessor.isMagickAvailable(path: "/definitely/not/a/real/magick"))
+    }
+
     func testSupportsPhotoshopDocuments() {
         XCTAssertTrue(ImageProcessor.isSupportedImage(URL(fileURLWithPath: "/tmp/design.psd")))
         XCTAssertTrue(ImageProcessor.isSupportedImage(URL(fileURLWithPath: "/tmp/large-design.psb")))
