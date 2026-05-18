@@ -36,6 +36,25 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
     <string>APPL</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Images, PDFs, and folders</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.image</string>
+                <string>com.adobe.photoshop-image</string>
+                <string>com.adobe.photoshop-large-document</string>
+                <string>com.adobe.pdf</string>
+                <string>public.folder</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundleShortVersionString</key>
     <string>$APP_VERSION</string>
     <key>CFBundleVersion</key>

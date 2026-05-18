@@ -20,7 +20,7 @@ public final class AppState: ObservableObject {
         jobs.first { $0.id == selectedJobID }
     }
 
-    func addURLs(_ urls: [URL]) {
+    public func addURLs(_ urls: [URL]) {
         let newJobs = urls.flatMap { resolvedJobs(from: $0) }
         for job in newJobs where !jobs.contains(where: { $0.inputURL == job.inputURL && $0.pageIndex == job.pageIndex }) {
             jobs.append(job)
