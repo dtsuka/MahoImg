@@ -110,6 +110,22 @@ final class ImageProcessorTests: XCTestCase {
         XCTAssertTrue(ImageProcessor.needsPDFRasterization(URL(fileURLWithPath: "/tmp/catalog.pdf")))
     }
 
+    func testPDFRasterizationUsesHighResolutionScale() {
+        XCTAssertEqual(ImageProcessor.pdfRasterizationScale, 600.0 / 72.0, accuracy: 0.001)
+    }
+
+    func testScalesCropRectForRasterizedPDF() {
+        let cropRect = ImageProcessor.scaledCropRect(
+            CropRect(x: 12, y: 24, width: 120, height: 80),
+            by: 600.0 / 72.0
+        )
+
+        XCTAssertEqual(cropRect.x, 100, accuracy: 0.001)
+        XCTAssertEqual(cropRect.y, 200, accuracy: 0.001)
+        XCTAssertEqual(cropRect.width, 1000, accuracy: 0.001)
+        XCTAssertEqual(cropRect.height, 666.667, accuracy: 0.001)
+    }
+
     func testOutputURLRenamesConflicts() throws {
         var settings = ConversionSettings()
         settings.outputFormat = .webp
@@ -168,6 +184,8 @@ final class ImageProcessorTests: XCTestCase {
             "-crop",
             "500x400+10+20",
             "+repage",
+            "-filter",
+            "Lanczos",
             "-resize",
             "300x200",
             "-bordercolor",
@@ -178,5 +196,62 @@ final class ImageProcessorTests: XCTestCase {
             "70",
             "/tmp/out.webp"
         ])
+    }
+
+    func testBuildsPDFRasterizedArgumentsWithWhitespaceTrimBeforeResize() {
+        var settings = ConversionSettings()
+        settings.outputFormat = .jpeg
+        settings.resizeMode = .fit
+        settings.targetWidth = 1200
+        settings.targetHeight = 1200
+
+        let args = ImageProcessor.arguments(
+            inputURL: URL(fileURLWithPath: "/tmp/rasterized.pdf-page.png"),
+            outputURL: URL(fileURLWithPath: "/tmp/out.jpg"),
+            settings: settings,
+            cropRect: CropRect(x: 0, y: 0, width: 4167, height: 5896),
+            trimsWhitespace: true
+        )
+
+        XCTAssertEqual(args, [
+            "/tmp/rasterized.pdf-page.png",
+            "-auto-orient",
+            "-crop",
+            "4167x5896+0+0",
+            "+repage",
+            "-fuzz",
+            "1%",
+            "-trim",
+            "+repage",
+            "-filter",
+            "Lanczos",
+            "-resize",
+            "1200x1200",
+            "-strip",
+            "-sampling-factor",
+            "4:2:0",
+            "-interlace",
+            "Plane",
+            "-quality",
+            "82",
+            "/tmp/out.jpg"
+        ])
+    }
+
+    func testBuildsPDFRasterizedArgumentsWithoutWhitespaceTrimByDefault() {
+        var settings = ConversionSettings()
+        settings.outputFormat = .jpeg
+        settings.resizeMode = .fit
+        settings.targetWidth = 1224
+        settings.targetHeight = 1000
+
+        let args = ImageProcessor.arguments(
+            inputURL: URL(fileURLWithPath: "/tmp/rasterized.pdf-page.png"),
+            outputURL: URL(fileURLWithPath: "/tmp/out.jpg"),
+            settings: settings,
+            cropRect: CropRect(x: 0, y: 0, width: 5102, height: 7158)
+        )
+
+        XCTAssertFalse(args.contains("-trim"))
     }
 }

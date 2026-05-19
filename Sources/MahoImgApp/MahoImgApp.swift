@@ -1,18 +1,51 @@
+import AppKit
 import MahoImgCore
 import SwiftUI
 
 @main
 struct MahoImgApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var state = AppState()
 
     var body: some Scene {
-        WindowGroup("MahoImg") {
+        Window("MahoImg", id: "main") {
             ContentView()
                 .environmentObject(state)
+                .onAppear {
+                    appDelegate.openURLsHandler = { [state] urls in
+                        state.addURLs(urls)
+                    }
+
+                    let pendingURLs = appDelegate.consumePendingURLs()
+                    if !pendingURLs.isEmpty {
+                        state.addURLs(pendingURLs)
+                    }
+                }
                 .frame(minWidth: 980, minHeight: 680)
                 .background(WindowTitleBarConfigurator())
         }
         .windowStyle(.titleBar)
+    }
+}
+
+@MainActor
+private final class AppDelegate: NSObject, NSApplicationDelegate {
+    var openURLsHandler: (([URL]) -> Void)?
+    private var pendingURLs: [URL] = []
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        if let openURLsHandler {
+            openURLsHandler(urls)
+        } else {
+            pendingURLs.append(contentsOf: urls)
+        }
+        application.activate(ignoringOtherApps: true)
+        application.windows.first?.makeKeyAndOrderFront(nil)
+    }
+
+    func consumePendingURLs() -> [URL] {
+        defer { pendingURLs.removeAll() }
+        return pendingURLs
     }
 }
 

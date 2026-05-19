@@ -142,7 +142,7 @@ private struct CropCanvas: NSViewRepresentable {
             return nil
         }
 
-        return page.thumbnail(of: job.pixelSize, for: .mediaBox)
+        return page.thumbnail(of: job.pixelSize, for: .cropBox)
     }
 }
 
