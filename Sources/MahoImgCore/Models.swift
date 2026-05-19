@@ -118,6 +118,7 @@ struct ConversionSettings: Codable, Equatable {
     var resizeMode: ResizeMode = .fit
     var targetWidth: Int = 300
     var targetHeight: Int = 300
+    var pdfAutoTrimWhitespace: Bool = false
     var paddingEnabled: Bool = false
     var paddingPixels: Int = 0
     var paddingColor: ColorHex = .white
@@ -126,6 +127,26 @@ struct ConversionSettings: Codable, Equatable {
     var prefix: String = ""
     var suffix: String = ""
     var conflictAction: NameConflictAction = .rename
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        outputFormat = try container.decodeIfPresent(OutputFormat.self, forKey: .outputFormat) ?? .webp
+        quality = try container.decodeIfPresent(Int.self, forKey: .quality) ?? 82
+        resizeMode = try container.decodeIfPresent(ResizeMode.self, forKey: .resizeMode) ?? .fit
+        targetWidth = try container.decodeIfPresent(Int.self, forKey: .targetWidth) ?? 300
+        targetHeight = try container.decodeIfPresent(Int.self, forKey: .targetHeight) ?? 300
+        pdfAutoTrimWhitespace = try container.decodeIfPresent(Bool.self, forKey: .pdfAutoTrimWhitespace) ?? false
+        paddingEnabled = try container.decodeIfPresent(Bool.self, forKey: .paddingEnabled) ?? false
+        paddingPixels = try container.decodeIfPresent(Int.self, forKey: .paddingPixels) ?? 0
+        paddingColor = try container.decodeIfPresent(ColorHex.self, forKey: .paddingColor) ?? .white
+        saveLocation = try container.decodeIfPresent(SaveLocation.self, forKey: .saveLocation) ?? .original
+        chosenFolderPath = try container.decodeIfPresent(String.self, forKey: .chosenFolderPath) ?? ""
+        prefix = try container.decodeIfPresent(String.self, forKey: .prefix) ?? ""
+        suffix = try container.decodeIfPresent(String.self, forKey: .suffix) ?? ""
+        conflictAction = try container.decodeIfPresent(NameConflictAction.self, forKey: .conflictAction) ?? .rename
+    }
 }
 
 enum JobStatus: Equatable {

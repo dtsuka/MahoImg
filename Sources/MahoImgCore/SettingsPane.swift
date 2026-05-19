@@ -61,6 +61,13 @@ struct SettingsPane: View {
                 PixelInputRow(label: "高さ", value: $state.settings.targetHeight)
             }
 
+            Section("PDF") {
+                Toggle("白余白を自動トリム", isOn: $state.settings.pdfAutoTrimWhitespace)
+                Text("オフの場合はPreview.appと同じくPDFページ全体を変換します。オンにすると、ページ周囲の白い余白を落として内容を大きく出力します。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("トリミング") {
                 if let job = state.selectedJob {
                     CropControls(job: job)

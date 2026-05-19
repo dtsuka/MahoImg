@@ -1,6 +1,6 @@
 import AppKit
+import CoreGraphics
 import Foundation
-import PDFKit
 import UniformTypeIdentifiers
 
 enum ImageProcessorError: LocalizedError {
@@ -24,6 +24,8 @@ enum ImageProcessorError: LocalizedError {
 }
 
 struct ImageProcessor {
+    static let pdfRasterizationDPI = 600.0
+    private static let pdfPointsPerInch = 72.0
     static let magickPath = resolveMagickPath()
     static let magickInstallGuide = """
     WebP 書き出しなどの変換処理には ImageMagick が必要です。Homebrew を使っている場合は、ターミナルで次を実行してください。
@@ -57,6 +59,19 @@ struct ImageProcessor {
 
     static func needsPDFRasterization(_ url: URL) -> Bool {
         isPDFDocument(url)
+    }
+
+    static var pdfRasterizationScale: Double {
+        pdfRasterizationDPI / pdfPointsPerInch
+    }
+
+    static func scaledCropRect(_ cropRect: CropRect, by scale: Double) -> CropRect {
+        CropRect(
+            x: cropRect.x * scale,
+            y: cropRect.y * scale,
+            width: cropRect.width * scale,
+            height: cropRect.height * scale
+        )
     }
 
     static func isMagickAvailable(path: String = magickPath, fileManager: FileManager = .default) -> Bool {
@@ -132,7 +147,14 @@ struct ImageProcessor {
         return proposed
     }
 
-    static func arguments(inputURL: URL, outputURL: URL, settings: ConversionSettings, cropRect: CropRect, pageIndex: Int = 0) -> [String] {
+    static func arguments(
+        inputURL: URL,
+        outputURL: URL,
+        settings: ConversionSettings,
+        cropRect: CropRect,
+        pageIndex: Int = 0,
+        trimsWhitespace: Bool = false
+    ) -> [String] {
         var args = [inputArgument(for: inputURL, pageIndex: pageIndex), "-auto-orient"]
         let crop = cropRect.clamped(to: CGSize(width: max(cropRect.x + cropRect.width, cropRect.width), height: max(cropRect.y + cropRect.height, cropRect.height)))
         if crop.width > 0, crop.height > 0 {
@@ -142,6 +164,9 @@ struct ImageProcessor {
                 "+repage"
             ]
         }
+        if trimsWhitespace {
+            args += ["-fuzz", "1%", "-trim", "+repage"]
+        }
 
         let width = max(settings.targetWidth, 1)
         let height = max(settings.targetHeight, 1)
@@ -149,15 +174,15 @@ struct ImageProcessor {
         case .none:
             break
         case .fit:
-            args += ["-resize", "\(width)x\(height)"]
+            args += ["-filter", "Lanczos", "-resize", "\(width)x\(height)"]
         case .fillCrop:
-            args += ["-resize", "\(width)x\(height)^", "-gravity", "center", "-extent", "\(width)x\(height)"]
+            args += ["-filter", "Lanczos", "-resize", "\(width)x\(height)^", "-gravity", "center", "-extent", "\(width)x\(height)"]
         case .width:
-            args += ["-resize", "\(width)"]
+            args += ["-filter", "Lanczos", "-resize", "\(width)"]
         case .height:
-            args += ["-resize", "x\(height)"]
+            args += ["-filter", "Lanczos", "-resize", "x\(height)"]
         case .exact:
-            args += ["-resize", "\(width)x\(height)!"]
+            args += ["-filter", "Lanczos", "-resize", "\(width)x\(height)!"]
         }
 
         if settings.paddingEnabled, settings.paddingPixels > 0 {
@@ -165,7 +190,9 @@ struct ImageProcessor {
         }
 
         switch settings.outputFormat {
-        case .jpeg, .webp:
+        case .jpeg:
+            args += ["-strip", "-sampling-factor", "4:2:0", "-interlace", "Plane", "-quality", "\(min(max(settings.quality, 1), 100))"]
+        case .webp:
             args += ["-quality", "\(min(max(settings.quality, 1), 100))"]
         case .png:
             break
@@ -179,19 +206,22 @@ struct ImageProcessor {
         guard FileManager.default.isExecutableFile(atPath: magickPath) else {
             throw ImageProcessorError.missingMagick
         }
-        let rasterizedInputURL = try needsPDFRasterization(inputURL) ? rasterizedPDFInputURL(inputURL, pageIndex: pageIndex) : nil
-        let processInputURL = rasterizedInputURL ?? inputURL
+        let pdfScale = pdfRasterizationScale
+        let rasterizedInput = try needsPDFRasterization(inputURL) ? rasterizedPDFInput(inputURL, pageIndex: pageIndex, scale: pdfScale) : nil
+        let processInputURL = rasterizedInput ?? inputURL
+        let processCropRect = rasterizedInput == nil ? cropRect : scaledCropRect(cropRect, by: pdfScale)
+        let trimsWhitespace = rasterizedInput != nil && settings.pdfAutoTrimWhitespace
 
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: magickPath)
-            process.arguments = arguments(inputURL: processInputURL, outputURL: outputURL, settings: settings, cropRect: cropRect)
+            process.arguments = arguments(inputURL: processInputURL, outputURL: outputURL, settings: settings, cropRect: processCropRect, trimsWhitespace: trimsWhitespace)
 
             let errorPipe = Pipe()
             process.standardError = errorPipe
             process.terminationHandler = { process in
-                if let rasterizedInputURL {
-                    try? FileManager.default.removeItem(at: rasterizedInputURL)
+                if let rasterizedInput {
+                    try? FileManager.default.removeItem(at: rasterizedInput)
                 }
                 if process.terminationStatus == 0 {
                     continuation.resume()
@@ -205,28 +235,47 @@ struct ImageProcessor {
             do {
                 try process.run()
             } catch {
-                if let rasterizedInputURL {
-                    try? FileManager.default.removeItem(at: rasterizedInputURL)
+                if let rasterizedInput {
+                    try? FileManager.default.removeItem(at: rasterizedInput)
                 }
                 continuation.resume(throwing: error)
             }
         }
     }
 
-    private static func rasterizedPDFInputURL(_ inputURL: URL, pageIndex: Int) throws -> URL {
-        guard let document = PDFDocument(url: inputURL),
-              let page = document.page(at: pageIndex) else {
+    private static func rasterizedPDFInput(_ inputURL: URL, pageIndex: Int, scale: Double) throws -> URL {
+        guard let document = CGPDFDocument(inputURL as CFURL),
+              let page = document.page(at: pageIndex + 1) else {
             throw ImageProcessorError.pdfRenderFailed
         }
 
-        let bounds = page.bounds(for: .mediaBox)
-        let width = max(1, Int(bounds.width.rounded(.up)))
-        let height = max(1, Int(bounds.height.rounded(.up)))
-        let image = page.thumbnail(of: CGSize(width: width, height: height), for: .mediaBox)
+        let bounds = page.getBoxRect(.cropBox)
+        let width = max(1, Int((bounds.width * scale).rounded(.up)))
+        let height = max(1, Int((bounds.height * scale).rounded(.up)))
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw ImageProcessorError.pdfRenderFailed
+        }
 
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let data = bitmap.representation(using: .png, properties: [:]) else {
+        context.setFillColor(NSColor.white.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.interpolationQuality = .high
+        context.setShouldAntialias(true)
+        context.setAllowsAntialiasing(true)
+
+        context.scaleBy(x: scale, y: scale)
+        context.concatenate(page.getDrawingTransform(.cropBox, rect: bounds, rotate: 0, preserveAspectRatio: false))
+        context.drawPDFPage(page)
+
+        guard let cgImage = context.makeImage(),
+              let data = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else {
             throw ImageProcessorError.pdfRenderFailed
         }
 

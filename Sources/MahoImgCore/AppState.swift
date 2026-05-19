@@ -220,7 +220,7 @@ public final class AppState: ObservableObject {
               let page = document.page(at: pageIndex) else {
             return nil
         }
-        return page.bounds(for: .mediaBox).size
+        return page.bounds(for: .cropBox).size
     }
 }
 
