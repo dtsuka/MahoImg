@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import PDFKit
 import UniformTypeIdentifiers
 
 enum ImageProcessorError: LocalizedError {
@@ -243,27 +244,36 @@ struct ImageProcessor {
         }
     }
 
-    private static func rasterizedPDFInput(_ inputURL: URL, pageIndex: Int, scale: Double) throws -> URL {
-        guard let document = CGPDFDocument(inputURL as CFURL),
-              let page = document.page(at: pageIndex + 1) else {
+    static func rasterizedPDFInput(_ inputURL: URL, pageIndex: Int, scale: Double) throws -> URL {
+        guard let document = PDFDocument(url: inputURL),
+              let page = document.page(at: pageIndex) else {
             throw ImageProcessorError.pdfRenderFailed
         }
 
-        let bounds = page.getBoxRect(.cropBox)
+        let bounds = page.bounds(for: .cropBox)
         let width = max(1, Int((bounds.width * scale).rounded(.up)))
         let height = max(1, Int((bounds.height * scale).rounded(.up)))
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
+        guard let imageRep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: width,
+            pixelsHigh: height,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
+            bitsPerPixel: 0
+        ),
+            let graphicsContext = NSGraphicsContext(bitmapImageRep: imageRep) else {
             throw ImageProcessorError.pdfRenderFailed
         }
 
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphicsContext
+        defer { NSGraphicsContext.restoreGraphicsState() }
+
+        let context = graphicsContext.cgContext
         context.setFillColor(NSColor.white.cgColor)
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.interpolationQuality = .high
@@ -271,11 +281,9 @@ struct ImageProcessor {
         context.setAllowsAntialiasing(true)
 
         context.scaleBy(x: scale, y: scale)
-        context.concatenate(page.getDrawingTransform(.cropBox, rect: bounds, rotate: 0, preserveAspectRatio: false))
-        context.drawPDFPage(page)
+        page.draw(with: .cropBox, to: context)
 
-        guard let cgImage = context.makeImage(),
-              let data = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else {
+        guard let data = imageRep.representation(using: .png, properties: [:]) else {
             throw ImageProcessorError.pdfRenderFailed
         }
 

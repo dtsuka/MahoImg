@@ -1,5 +1,7 @@
+import AppKit
 import CoreGraphics
 import Foundation
+import PDFKit
 @testable import MahoImgCore
 import XCTest
 
@@ -112,6 +114,59 @@ final class ImageProcessorTests: XCTestCase {
 
     func testPDFRasterizationUsesHighResolutionScale() {
         XCTAssertEqual(ImageProcessor.pdfRasterizationScale, 600.0 / 72.0, accuracy: 0.001)
+    }
+
+    func testPDFRasterizationDrawsFreeTextAnnotations() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let pdfURL = directory.appendingPathComponent("annotation.pdf")
+        let pageSize = CGSize(width: 200, height: 200)
+        let image = NSImage(size: pageSize)
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: pageSize).fill()
+        image.unlockFocus()
+
+        guard let page = PDFPage(image: image) else {
+            return XCTFail("Failed to create test PDF page")
+        }
+
+        let annotation = PDFAnnotation(
+            bounds: CGRect(x: 60, y: 70, width: 80, height: 60),
+            forType: .freeText,
+            withProperties: nil
+        )
+        annotation.contents = "A"
+        annotation.font = .boldSystemFont(ofSize: 48)
+        annotation.fontColor = .black
+        annotation.color = .clear
+        page.addAnnotation(annotation)
+
+        let document = PDFDocument()
+        document.insert(page, at: 0)
+        XCTAssertTrue(document.write(to: pdfURL))
+
+        let rasterizedURL = try ImageProcessor.rasterizedPDFInput(pdfURL, pageIndex: 0, scale: 2)
+        defer { try? FileManager.default.removeItem(at: rasterizedURL) }
+
+        let rasterizedData = try Data(contentsOf: rasterizedURL)
+        guard let imageRep = NSBitmapImageRep(data: rasterizedData) else {
+            return XCTFail("Failed to read rasterized PDF image")
+        }
+
+        var darkPixelCount = 0
+        for y in 0..<imageRep.pixelsHigh {
+            for x in 0..<imageRep.pixelsWide {
+                guard let color = imageRep.colorAt(x: x, y: y) else { continue }
+                if color.redComponent < 0.2, color.greenComponent < 0.2, color.blueComponent < 0.2, color.alphaComponent > 0.8 {
+                    darkPixelCount += 1
+                }
+            }
+        }
+
+        XCTAssertGreaterThan(darkPixelCount, 100)
     }
 
     func testScalesCropRectForRasterizedPDF() {
