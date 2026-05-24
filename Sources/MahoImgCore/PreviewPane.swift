@@ -9,7 +9,10 @@ struct PreviewPane: View {
     var body: some View {
         ZStack {
             Color(nsColor: .textBackgroundColor)
-            if let job = state.selectedJob {
+            if state.selectedJobs.count > 1 {
+                MultiSelectionPreview(jobs: state.selectedJobs)
+                    .padding(20)
+            } else if let job = state.selectedJob {
                 CropPreview(job: job)
                     .padding(20)
             } else {
@@ -21,6 +24,69 @@ struct PreviewPane: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+}
+
+private struct MultiSelectionPreview: View {
+    let jobs: [ImageJob]
+    private let maxPreviewCount = 12
+    private let columns = [
+        GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 14)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("選択中: \(jobs.count)件")
+                    .font(.headline)
+                Spacer()
+                if omittedCount > 0 {
+                    Text("ほか\(omittedCount)件を省略")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ScrollView {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                    ForEach(visibleJobs) { job in
+                        SelectedJobPreviewTile(job: job)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var visibleJobs: ArraySlice<ImageJob> {
+        jobs.prefix(maxPreviewCount)
+    }
+
+    private var omittedCount: Int {
+        max(0, jobs.count - maxPreviewCount)
+    }
+}
+
+private struct SelectedJobPreviewTile: View {
+    @ObservedObject var job: ImageJob
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ThumbnailCanvas(job: job)
+                .aspectRatio(1, contentMode: .fit)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                }
+
+            Text(job.displayName)
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(job.displayName)
         }
     }
 }
@@ -119,11 +185,28 @@ private struct CropCanvas: NSViewRepresentable {
 
     func updateNSView(_ nsView: CropCanvasView, context: Context) {
         nsView.job = job
-        nsView.image = Self.previewImage(for: job)
+        nsView.image = PreviewImageLoader.previewImage(for: job)
         nsView.needsDisplay = true
     }
+}
 
-    private static func previewImage(for job: ImageJob) -> NSImage? {
+private struct ThumbnailCanvas: NSViewRepresentable {
+    @ObservedObject var job: ImageJob
+
+    func makeNSView(context: Context) -> ThumbnailCanvasView {
+        ThumbnailCanvasView()
+    }
+
+    func updateNSView(_ nsView: ThumbnailCanvasView, context: Context) {
+        nsView.job = job
+        nsView.image = PreviewImageLoader.previewImage(for: job)
+        nsView.needsDisplay = true
+    }
+}
+
+@MainActor
+private enum PreviewImageLoader {
+    static func previewImage(for job: ImageJob) -> NSImage? {
         if ImageProcessor.isPDFDocument(job.inputURL) {
             return pdfPreviewImage(for: job)
         }
@@ -143,6 +226,38 @@ private struct CropCanvas: NSViewRepresentable {
         }
 
         return page.thumbnail(of: job.pixelSize, for: .cropBox)
+    }
+}
+
+@MainActor
+private final class ThumbnailCanvasView: NSView {
+    var job: ImageJob?
+    var image: NSImage?
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let job, let image else { return }
+
+        NSGraphicsContext.current?.imageInterpolation = .high
+        let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
+        drawPreviewImage(image, in: mapper.imageFrame, verticallyFlipped: ImageProcessor.isPhotoshopDocument(job.inputURL))
+    }
+
+    private func drawPreviewImage(_ image: NSImage, in imageFrame: CGRect, verticallyFlipped: Bool) {
+        guard verticallyFlipped else {
+            image.draw(in: imageFrame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            return
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        let transform = NSAffineTransform()
+        transform.translateX(by: 0, yBy: imageFrame.minY + imageFrame.maxY)
+        transform.scaleX(by: 1, yBy: -1)
+        transform.concat()
+        image.draw(in: imageFrame, from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 

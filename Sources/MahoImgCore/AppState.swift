@@ -6,7 +6,7 @@ import PDFKit
 @MainActor
 public final class AppState: ObservableObject {
     @Published var jobs: [ImageJob] = []
-    @Published var selectedJobID: UUID?
+    @Published var selectedJobIDs: Set<UUID> = []
     @Published var settings: ConversionSettings = SettingsStore.load() {
         didSet { SettingsStore.save(settings) }
     }
@@ -17,7 +17,15 @@ public final class AppState: ObservableObject {
     public init() {}
 
     var selectedJob: ImageJob? {
-        jobs.first { $0.id == selectedJobID }
+        selectedJobs.first
+    }
+
+    var selectedJobs: [ImageJob] {
+        jobs.filter { selectedJobIDs.contains($0.id) }
+    }
+
+    var hasSelection: Bool {
+        !selectedJobIDs.isEmpty
     }
 
     public func addURLs(_ urls: [URL], activateAdded: Bool = false) {
@@ -35,25 +43,25 @@ public final class AppState: ObservableObject {
         }
 
         if activateAdded, let jobToActivate {
-            selectedJobID = jobToActivate.id
+            selectedJobIDs = [jobToActivate.id]
             return
         }
 
-        if selectedJobID == nil {
-            selectedJobID = jobs.first?.id
+        if selectedJobIDs.isEmpty, let firstJobID = jobs.first?.id {
+            selectedJobIDs = [firstJobID]
         }
     }
 
     func removeSelected() {
-        guard let selectedJobID else { return }
-        jobs.removeAll { $0.id == selectedJobID }
-        self.selectedJobID = jobs.first?.id
+        guard !selectedJobIDs.isEmpty else { return }
+        jobs.removeAll { selectedJobIDs.contains($0.id) }
+        selectedJobIDs = jobs.first.map { [$0.id] } ?? []
     }
 
     func removeAllJobs() {
         guard !isProcessing else { return }
         jobs.removeAll()
-        selectedJobID = nil
+        selectedJobIDs = []
         progressText = "待機中"
     }
 
@@ -89,8 +97,7 @@ public final class AppState: ObservableObject {
     }
 
     func processSelected() {
-        guard let selectedJob else { return }
-        process([selectedJob], completionText: "個別変換完了")
+        process(selectedJobs, completionText: "選択項目の変換完了")
     }
 
     func showMissingMagickGuideIfNeeded() {

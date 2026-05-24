@@ -63,11 +63,12 @@ final class AppStateTests: XCTestCase {
 
         let state = AppState()
         state.addURLs([firstURL])
-        let firstSelectedID = try XCTUnwrap(state.selectedJobID)
+        let firstSelectedID = try XCTUnwrap(state.selectedJobIDs.first)
 
         state.addURLs([secondURL], activateAdded: true)
 
-        XCTAssertNotEqual(state.selectedJobID, firstSelectedID)
+        XCTAssertEqual(state.selectedJobIDs.count, 1)
+        XCTAssertFalse(state.selectedJobIDs.contains(firstSelectedID))
         XCTAssertEqual(state.selectedJob?.inputURL, secondURL)
     }
 
@@ -88,7 +89,55 @@ final class AppStateTests: XCTestCase {
         state.addURLs([firstURL], activateAdded: true)
 
         XCTAssertEqual(state.jobs.count, 2)
+        XCTAssertEqual(state.selectedJobIDs.count, 1)
         XCTAssertEqual(state.selectedJob?.inputURL, firstURL)
+    }
+
+    func testSelectedJobsKeepsListOrderForMultipleSelection() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let firstURL = directory.appendingPathComponent("first.png")
+        let secondURL = directory.appendingPathComponent("second.png")
+        let thirdURL = directory.appendingPathComponent("third.png")
+        try writeTestPNG(to: firstURL)
+        try writeTestPNG(to: secondURL)
+        try writeTestPNG(to: thirdURL)
+
+        let state = AppState()
+        state.addURLs([firstURL, secondURL, thirdURL])
+        let secondID = try XCTUnwrap(state.jobs.first { $0.inputURL == secondURL }?.id)
+        let thirdID = try XCTUnwrap(state.jobs.first { $0.inputURL == thirdURL }?.id)
+
+        state.selectedJobIDs = [thirdID, secondID]
+
+        XCTAssertEqual(state.selectedJobs.map(\.inputURL), [secondURL, thirdURL])
+        XCTAssertEqual(state.selectedJob?.inputURL, secondURL)
+    }
+
+    func testRemoveSelectedDeletesAllSelectedImages() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let firstURL = directory.appendingPathComponent("first.png")
+        let secondURL = directory.appendingPathComponent("second.png")
+        let thirdURL = directory.appendingPathComponent("third.png")
+        try writeTestPNG(to: firstURL)
+        try writeTestPNG(to: secondURL)
+        try writeTestPNG(to: thirdURL)
+
+        let state = AppState()
+        state.addURLs([firstURL, secondURL, thirdURL])
+        let firstID = try XCTUnwrap(state.jobs.first { $0.inputURL == firstURL }?.id)
+        let thirdID = try XCTUnwrap(state.jobs.first { $0.inputURL == thirdURL }?.id)
+
+        state.selectedJobIDs = [firstID, thirdID]
+        state.removeSelected()
+
+        XCTAssertEqual(state.jobs.map(\.inputURL), [secondURL])
+        XCTAssertEqual(state.selectedJob?.inputURL, secondURL)
     }
 
     private func writeTestPNG(to url: URL) throws {

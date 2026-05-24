@@ -80,7 +80,7 @@ struct JobListView: View {
                 }
                 .controlSize(.regular)
                 .frame(width: 28, height: 28)
-                .disabled(state.selectedJobID == nil)
+                .disabled(!state.hasSelection)
                 .help("選択画像を削除")
 
                 Button {
@@ -96,7 +96,7 @@ struct JobListView: View {
             }
             .padding(12)
 
-            List(selection: $state.selectedJobID) {
+            List(selection: $state.selectedJobIDs) {
                 ForEach(state.jobs) { job in
                     JobRow(job: job)
                         .tag(job.id)
@@ -211,11 +211,19 @@ struct BottomBar: View {
             Button {
                 state.processSelected()
             } label: {
-                Label("個別変換", systemImage: "play.fill")
+                Label(selectionButtonTitle, systemImage: "play.fill")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(state.selectedJob == nil || state.isProcessing)
+            .disabled(!state.hasSelection || state.isProcessing)
         }
+    }
+
+    private var selectionButtonTitle: String {
+        let count = state.selectedJobs.count
+        if count > 1 {
+            return "選択した\(count)件を変換"
+        }
+        return "選択項目を変換"
     }
 }
 
