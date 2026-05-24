@@ -194,55 +194,39 @@ private struct CropControls: View {
     }
 
     private var cropXBinding: Binding<Int> {
-        Binding(
-            get: { Int(job.cropRect.x.rounded()) },
-            set: { newValue in
-                var rect = job.cropRect
-                let maxX = max(0, Double(job.pixelSize.width) - 16)
-                rect.x = min(max(Double(newValue), 0), maxX)
-                if rect.x + rect.width > Double(job.pixelSize.width) {
-                    rect.width = max(16, Double(job.pixelSize.width) - rect.x)
-                }
-                job.cropRect = rect.clamped(to: job.pixelSize)
-            }
-        )
+        cropBinding(get: \.x) { rect, value in
+            rect.setOriginX(Double(value), in: job.pixelSize)
+        }
     }
 
     private var cropYBinding: Binding<Int> {
-        Binding(
-            get: { Int(job.cropRect.y.rounded()) },
-            set: { newValue in
-                var rect = job.cropRect
-                let maxY = max(0, Double(job.pixelSize.height) - 16)
-                rect.y = min(max(Double(newValue), 0), maxY)
-                if rect.y + rect.height > Double(job.pixelSize.height) {
-                    rect.height = max(16, Double(job.pixelSize.height) - rect.y)
-                }
-                job.cropRect = rect.clamped(to: job.pixelSize)
-            }
-        )
+        cropBinding(get: \.y) { rect, value in
+            rect.setOriginY(Double(value), in: job.pixelSize)
+        }
     }
 
     private var cropWidthBinding: Binding<Int> {
-        Binding(
-            get: { Int(job.cropRect.width.rounded()) },
-            set: { newValue in
-                var rect = job.cropRect
-                let maxWidth = Double(job.pixelSize.width) - rect.x
-                rect.width = min(max(Double(newValue), 16), maxWidth)
-                job.cropRect = rect.clamped(to: job.pixelSize)
-            }
-        )
+        cropBinding(get: \.width) { rect, value in
+            rect.setWidth(Double(value), in: job.pixelSize)
+        }
     }
 
     private var cropHeightBinding: Binding<Int> {
+        cropBinding(get: \.height) { rect, value in
+            rect.setHeight(Double(value), in: job.pixelSize)
+        }
+    }
+
+    private func cropBinding(
+        get keyPath: KeyPath<CropRect, Double>,
+        apply: @escaping (inout CropRect, Int) -> Void
+    ) -> Binding<Int> {
         Binding(
-            get: { Int(job.cropRect.height.rounded()) },
+            get: { Int(job.cropRect[keyPath: keyPath].rounded()) },
             set: { newValue in
                 var rect = job.cropRect
-                let maxHeight = Double(job.pixelSize.height) - rect.y
-                rect.height = min(max(Double(newValue), 16), maxHeight)
-                job.cropRect = rect.clamped(to: job.pixelSize)
+                apply(&rect, newValue)
+                job.cropRect = rect
             }
         )
     }

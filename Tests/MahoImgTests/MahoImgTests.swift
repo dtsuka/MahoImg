@@ -15,6 +15,46 @@ final class CropRectTests: XCTestCase {
         XCTAssertEqual(clamped.x + clamped.width, 10, accuracy: 0.001)
         XCTAssertEqual(clamped.y + clamped.height, 8, accuracy: 0.001)
     }
+
+    func testSetOriginXAdjustsWidthWhenExceedingImageBounds() {
+        let imageSize = CGSize(width: 200, height: 100)
+        var rect = CropRect(x: 0, y: 0, width: 180, height: 80)
+        rect.setOriginX(50, in: imageSize)
+        XCTAssertEqual(rect.x, 50, accuracy: 0.001)
+        XCTAssertEqual(rect.width, 150, accuracy: 0.001)
+    }
+
+    func testSetWidthRespectsMinimumAndImageBounds() {
+        let imageSize = CGSize(width: 200, height: 100)
+        var rect = CropRect(x: 10, y: 0, width: 100, height: 80)
+        rect.setWidth(300, in: imageSize)
+        XCTAssertEqual(rect.width, 190, accuracy: 0.001)
+    }
+}
+
+final class CropInteractionTests: XCTestCase {
+    func testDragActionDetectsMoveInsideCropFrame() {
+        let mapper = PreviewMapper(imageSize: CGSize(width: 400, height: 400), viewportSize: CGSize(width: 400, height: 400))
+        let cropRect = CropRect(x: 100, y: 100, width: 200, height: 200)
+        let cropFrame = mapper.viewRect(from: cropRect)
+        let center = CGPoint(x: cropFrame.midX, y: cropFrame.midY)
+
+        XCTAssertEqual(CropInteraction.dragAction(at: center, cropRect: cropRect, mapper: mapper), .move)
+    }
+
+    func testUpdatedCropRectMovesWithinImageBounds() {
+        let imageSize = CGSize(width: 400, height: 400)
+        let startRect = CropRect(x: 100, y: 100, width: 200, height: 200)
+        let updated = CropInteraction.updatedCropRect(
+            action: .move,
+            startRect: startRect,
+            dx: 50,
+            dy: -20,
+            imageSize: imageSize
+        )
+        XCTAssertEqual(updated.x, 150, accuracy: 0.001)
+        XCTAssertEqual(updated.y, 80, accuracy: 0.001)
+    }
 }
 
 final class PreviewMapperTests: XCTestCase {
@@ -170,6 +210,36 @@ final class AppStateTests: XCTestCase {
     }
 }
 
+final class ImageSourceTests: XCTestCase {
+    func testClassifiesPDFAndPhotoshopDocuments() {
+        XCTAssertEqual(
+            ImageSource.classify(URL(fileURLWithPath: "/tmp/catalog.pdf")),
+            .pdf(URL(fileURLWithPath: "/tmp/catalog.pdf"))
+        )
+        XCTAssertEqual(
+            ImageSource.classify(URL(fileURLWithPath: "/tmp/layered.psd")),
+            .photoshop(URL(fileURLWithPath: "/tmp/layered.psd"))
+        )
+    }
+
+    func testArgumentsClampCropToImageSize() {
+        var settings = ConversionSettings()
+        settings.outputFormat = .webp
+        settings.resizeMode = .none
+
+        let args = ImageProcessor.arguments(
+            inputURL: URL(fileURLWithPath: "/tmp/in.jpg"),
+            outputURL: URL(fileURLWithPath: "/tmp/out.webp"),
+            settings: settings,
+            cropRect: CropRect(x: 0, y: 0, width: 500, height: 400),
+            imageSize: CGSize(width: 300, height: 200)
+        )
+
+        XCTAssertTrue(args.contains("-crop"))
+        XCTAssertTrue(args.contains("300x200+0+0"))
+    }
+}
+
 final class ImageProcessorTests: XCTestCase {
     func testResolvesMagickFromPathEnvironment() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -230,7 +300,7 @@ final class ImageProcessorTests: XCTestCase {
     }
 
     func testPDFDocumentsAreRasterizedBeforeImageMagick() {
-        XCTAssertTrue(ImageProcessor.needsPDFRasterization(URL(fileURLWithPath: "/tmp/catalog.pdf")))
+        XCTAssertTrue(ImageProcessor.isPDFDocument(URL(fileURLWithPath: "/tmp/catalog.pdf")))
     }
 
     func testPDFRasterizationUsesHighResolutionScale() {
@@ -351,7 +421,8 @@ final class ImageProcessorTests: XCTestCase {
             inputURL: URL(fileURLWithPath: "/tmp/in.jpg"),
             outputURL: URL(fileURLWithPath: "/tmp/out.webp"),
             settings: settings,
-            cropRect: CropRect(x: 10, y: 20, width: 500, height: 400)
+            cropRect: CropRect(x: 10, y: 20, width: 500, height: 400),
+            imageSize: CGSize(width: 1920, height: 1080)
         )
 
         XCTAssertEqual(args, [
@@ -386,6 +457,7 @@ final class ImageProcessorTests: XCTestCase {
             outputURL: URL(fileURLWithPath: "/tmp/out.jpg"),
             settings: settings,
             cropRect: CropRect(x: 0, y: 0, width: 4167, height: 5896),
+            imageSize: CGSize(width: 4167, height: 5896),
             trimsWhitespace: true
         )
 
@@ -425,7 +497,8 @@ final class ImageProcessorTests: XCTestCase {
             inputURL: URL(fileURLWithPath: "/tmp/rasterized.pdf-page.png"),
             outputURL: URL(fileURLWithPath: "/tmp/out.jpg"),
             settings: settings,
-            cropRect: CropRect(x: 0, y: 0, width: 5102, height: 7158)
+            cropRect: CropRect(x: 0, y: 0, width: 5102, height: 7158),
+            imageSize: CGSize(width: 5102, height: 7158)
         )
 
         XCTAssertFalse(args.contains("-trim"))

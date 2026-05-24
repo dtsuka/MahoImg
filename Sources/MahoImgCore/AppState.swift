@@ -1,6 +1,4 @@
-import AppKit
 import Foundation
-import ImageIO
 import PDFKit
 
 @MainActor
@@ -13,6 +11,7 @@ public final class AppState: ObservableObject {
     @Published var isProcessing = false
     @Published var progressText = "待機中"
     private var didShowMissingMagickGuide = false
+    private var processingTask: Task<Void, Never>?
 
     public init() {}
 
@@ -73,7 +72,7 @@ public final class AppState: ObservableObject {
     func setPage(_ pageIndex: Int, for job: ImageJob) {
         let clampedIndex = min(max(pageIndex, 0), job.pageCount - 1)
         guard clampedIndex != job.pageIndex else { return }
-        guard let size = Self.pixelSize(for: job.inputURL, pageIndex: clampedIndex) else { return }
+        guard let size = ImageMetadataReader.pixelSize(for: job.inputURL, pageIndex: clampedIndex) else { return }
         job.pageIndex = clampedIndex
         job.pixelSize = size
         job.cropRect = .full(size: size)
@@ -81,15 +80,9 @@ public final class AppState: ObservableObject {
     }
 
     func chooseOutputFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "選択"
-        if panel.runModal() == .OK, let url = panel.url {
-            settings.chosenFolderPath = url.path
-            settings.saveLocation = .chosenFolder
-        }
+        guard let path = PlatformServices.chooseOutputFolder() else { return }
+        settings.chosenFolderPath = path
+        settings.saveLocation = .chosenFolder
     }
 
     func processAll() {
@@ -100,32 +93,62 @@ public final class AppState: ObservableObject {
         process(selectedJobs, completionText: "選択項目の変換完了")
     }
 
+    func cancelProcessing() {
+        processingTask?.cancel()
+    }
+
     func showMissingMagickGuideIfNeeded() {
         guard !didShowMissingMagickGuide else { return }
         guard !ImageProcessor.isMagickAvailable() else { return }
         didShowMissingMagickGuide = true
-
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "ImageMagick が見つかりません"
-        alert.informativeText = ImageProcessor.magickInstallGuide
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        PlatformServices.showMissingMagickAlert()
     }
 
     private func process(_ targetJobs: [ImageJob], completionText: String) {
         guard !isProcessing else { return }
         guard !targetJobs.isEmpty else { return }
+
+        processingTask?.cancel()
         isProcessing = true
         progressText = "開始中"
+        let settingsSnapshot = settings
 
-        Task {
+        processingTask = Task {
             var completed = 0
+            defer {
+                for job in targetJobs where job.status == .processing {
+                    job.status = .pending
+                }
+                isProcessing = false
+                processingTask = nil
+            }
+
             for job in targetJobs {
+                guard !Task.isCancelled else {
+                    progressText = "キャンセルしました"
+                    return
+                }
+
                 job.status = .processing
                 do {
-                    let outputURL = try ImageProcessor.outputURL(for: job.inputURL, settings: settings, pageIndex: job.pageIndex, pageCount: job.pageCount)
-                    try await ImageProcessor.run(inputURL: job.inputURL, outputURL: outputURL, settings: settings, cropRect: job.cropRect, pageIndex: job.pageIndex)
+                    let outputURL = try ImageProcessor.outputURL(
+                        for: job.inputURL,
+                        settings: settingsSnapshot,
+                        pageIndex: job.pageIndex,
+                        pageCount: job.pageCount
+                    )
+                    try await ImageProcessor.run(
+                        inputURL: job.inputURL,
+                        outputURL: outputURL,
+                        settings: settingsSnapshot,
+                        cropRect: job.cropRect,
+                        imageSize: job.pixelSize,
+                        pageIndex: job.pageIndex
+                    )
+                    guard !Task.isCancelled else {
+                        progressText = "キャンセルしました"
+                        return
+                    }
                     job.status = .succeeded(outputURL)
                 } catch {
                     job.status = .failed(error.localizedDescription)
@@ -133,7 +156,7 @@ public final class AppState: ObservableObject {
                 completed += 1
                 progressText = "\(completed)/\(targetJobs.count) 完了"
             }
-            isProcessing = false
+
             progressText = completionText
         }
     }
@@ -147,7 +170,7 @@ public final class AppState: ObservableObject {
             }
             var resolved: [ImageJob] = []
             for item in enumerator {
-                guard let fileURL = item as? URL, ImageProcessor.isSupportedImage(fileURL) else { continue }
+                guard let fileURL = item as? URL, ImageSource.classify(fileURL) != nil else { continue }
                 resolved.append(contentsOf: resolvedJobs(from: fileURL))
             }
             return resolved.sorted {
@@ -157,16 +180,16 @@ public final class AppState: ObservableObject {
                 return $0.inputURL.path < $1.inputURL.path
             }
         }
-        guard ImageProcessor.isSupportedImage(url) else { return [] }
+        guard ImageSource.classify(url) != nil else { return [] }
         return jobs(for: url)
     }
 
     private func jobs(for url: URL) -> [ImageJob] {
-        if ImageProcessor.isPDFDocument(url) {
+        if case .pdf = ImageSource.classify(url) {
             return pdfJobs(for: url)
         }
 
-        guard let size = Self.pixelSize(for: url) else { return [] }
+        guard let size = ImageMetadataReader.pixelSize(for: url) else { return [] }
         return [ImageJob(inputURL: url, pixelSize: size)]
     }
 
@@ -174,90 +197,21 @@ public final class AppState: ObservableObject {
         guard let document = PDFDocument(url: url), document.pageCount > 0 else { return [] }
         let pageCount = document.pageCount
         if pageCount == 1 {
-            guard let size = Self.pdfPageSize(for: url, pageIndex: 0) else { return [] }
+            guard let size = ImageMetadataReader.pdfPageSize(for: url, pageIndex: 0) else { return [] }
             return [ImageJob(inputURL: url, pixelSize: size, pageCount: pageCount)]
         }
 
-        switch multiPagePDFChoice(for: url, pageCount: pageCount) {
+        switch PlatformServices.multiPagePDFChoice(for: url, pageCount: pageCount) {
         case .singleItem:
-            guard let size = Self.pdfPageSize(for: url, pageIndex: 0) else { return [] }
+            guard let size = ImageMetadataReader.pdfPageSize(for: url, pageIndex: 0) else { return [] }
             return [ImageJob(inputURL: url, pixelSize: size, pageCount: pageCount)]
         case .allPages:
             return (0..<pageCount).compactMap { pageIndex in
-                guard let size = Self.pdfPageSize(for: url, pageIndex: pageIndex) else { return nil }
+                guard let size = ImageMetadataReader.pdfPageSize(for: url, pageIndex: pageIndex) else { return nil }
                 return ImageJob(inputURL: url, pixelSize: size, pageIndex: pageIndex, pageCount: pageCount)
             }
         case .cancel:
             return []
         }
-    }
-
-    private enum MultiPagePDFChoice {
-        case singleItem
-        case allPages
-        case cancel
-    }
-
-    private func multiPagePDFChoice(for url: URL, pageCount: Int) -> MultiPagePDFChoice {
-        let alert = NSAlert()
-        alert.messageText = "このPDFには \(pageCount) ページあります。"
-        alert.informativeText = "どのように追加しますか？"
-        alert.addButton(withTitle: "ページを選んで追加")
-        alert.addButton(withTitle: "全ページを追加")
-        alert.addButton(withTitle: "キャンセル")
-        alert.icon = NSWorkspace.shared.icon(forFile: url.path)
-
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            return .singleItem
-        case .alertSecondButtonReturn:
-            return .allPages
-        default:
-            return .cancel
-        }
-    }
-
-    private static func pixelSize(for url: URL, pageIndex: Int = 0) -> CGSize? {
-        if ImageProcessor.isPDFDocument(url) {
-            return pdfPageSize(for: url, pageIndex: pageIndex)
-        }
-
-        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-           let width = properties[kCGImagePropertyPixelWidth] as? Double,
-           let height = properties[kCGImagePropertyPixelHeight] as? Double {
-            return CGSize(width: width, height: height)
-        }
-
-        guard let image = NSImage(contentsOf: url) else { return nil }
-        if let rep = image.representations.first {
-            return CGSize(width: rep.pixelsWide, height: rep.pixelsHigh)
-        }
-        return image.size
-    }
-
-    private static func pdfPageSize(for url: URL, pageIndex: Int) -> CGSize? {
-        guard let document = PDFDocument(url: url),
-              let page = document.page(at: pageIndex) else {
-            return nil
-        }
-        return page.bounds(for: .cropBox).size
-    }
-}
-
-enum SettingsStore {
-    private static let key = "MahoImg.ConversionSettings"
-
-    static func load() -> ConversionSettings {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let settings = try? JSONDecoder().decode(ConversionSettings.self, from: data) else {
-            return ConversionSettings()
-        }
-        return settings
-    }
-
-    static func save(_ settings: ConversionSettings) {
-        guard let data = try? JSONEncoder().encode(settings) else { return }
-        UserDefaults.standard.set(data, forKey: key)
     }
 }

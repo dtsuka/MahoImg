@@ -110,6 +110,36 @@ struct CropRect: Codable, Equatable {
         let newY = min(max(y, 0), max(0, Double(size.height) - newHeight))
         return CropRect(x: newX, y: newY, width: newWidth, height: newHeight)
     }
+
+    mutating func setOriginX(_ value: Double, in imageSize: CGSize, minimum: Double = 16) {
+        let maxX = max(0, Double(imageSize.width) - minimum)
+        x = min(max(value, 0), maxX)
+        if x + width > Double(imageSize.width) {
+            width = max(minimum, Double(imageSize.width) - x)
+        }
+        self = clamped(to: imageSize, minimum: minimum)
+    }
+
+    mutating func setOriginY(_ value: Double, in imageSize: CGSize, minimum: Double = 16) {
+        let maxY = max(0, Double(imageSize.height) - minimum)
+        y = min(max(value, 0), maxY)
+        if y + height > Double(imageSize.height) {
+            height = max(minimum, Double(imageSize.height) - y)
+        }
+        self = clamped(to: imageSize, minimum: minimum)
+    }
+
+    mutating func setWidth(_ value: Double, in imageSize: CGSize, minimum: Double = 16) {
+        let maxWidth = Double(imageSize.width) - x
+        width = min(max(value, minimum), maxWidth)
+        self = clamped(to: imageSize, minimum: minimum)
+    }
+
+    mutating func setHeight(_ value: Double, in imageSize: CGSize, minimum: Double = 16) {
+        let maxHeight = Double(imageSize.height) - y
+        height = min(max(value, minimum), maxHeight)
+        self = clamped(to: imageSize, minimum: minimum)
+    }
 }
 
 struct ConversionSettings: Codable, Equatable {
