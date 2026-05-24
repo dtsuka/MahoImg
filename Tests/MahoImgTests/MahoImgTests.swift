@@ -49,6 +49,62 @@ final class PreviewMapperTests: XCTestCase {
     }
 }
 
+@MainActor
+final class AppStateTests: XCTestCase {
+    func testAddURLsCanActivateNewlyAddedImage() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let firstURL = directory.appendingPathComponent("first.png")
+        let secondURL = directory.appendingPathComponent("second.png")
+        try writeTestPNG(to: firstURL)
+        try writeTestPNG(to: secondURL)
+
+        let state = AppState()
+        state.addURLs([firstURL])
+        let firstSelectedID = try XCTUnwrap(state.selectedJobID)
+
+        state.addURLs([secondURL], activateAdded: true)
+
+        XCTAssertNotEqual(state.selectedJobID, firstSelectedID)
+        XCTAssertEqual(state.selectedJob?.inputURL, secondURL)
+    }
+
+    func testAddURLsCanActivateExistingImageWhenDroppedAgain() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let firstURL = directory.appendingPathComponent("first.png")
+        let secondURL = directory.appendingPathComponent("second.png")
+        try writeTestPNG(to: firstURL)
+        try writeTestPNG(to: secondURL)
+
+        let state = AppState()
+        state.addURLs([firstURL])
+        state.addURLs([secondURL], activateAdded: true)
+
+        state.addURLs([firstURL], activateAdded: true)
+
+        XCTAssertEqual(state.jobs.count, 2)
+        XCTAssertEqual(state.selectedJob?.inputURL, firstURL)
+    }
+
+    private func writeTestPNG(to url: URL) throws {
+        let image = NSImage(size: CGSize(width: 1, height: 1))
+        image.lockFocus()
+        NSColor.black.setFill()
+        NSRect(x: 0, y: 0, width: 1, height: 1).fill()
+        image.unlockFocus()
+
+        let data = try XCTUnwrap(image.tiffRepresentation)
+        let representation = try XCTUnwrap(NSBitmapImageRep(data: data))
+        let png = try XCTUnwrap(representation.representation(using: .png, properties: [:]))
+        try png.write(to: url)
+    }
+}
+
 final class ImageProcessorTests: XCTestCase {
     func testResolvesMagickFromPathEnvironment() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

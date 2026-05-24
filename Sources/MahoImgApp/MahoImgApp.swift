@@ -13,12 +13,12 @@ struct MahoImgApp: App {
                 .environmentObject(state)
                 .onAppear {
                     appDelegate.openURLsHandler = { [state] urls in
-                        state.addURLs(urls)
+                        state.addURLs(urls, activateAdded: true)
                     }
 
                     let pendingURLs = appDelegate.consumePendingURLs()
                     if !pendingURLs.isEmpty {
-                        state.addURLs(pendingURLs)
+                        state.addURLs(pendingURLs, activateAdded: true)
                     }
                 }
                 .frame(minWidth: 980, minHeight: 680)

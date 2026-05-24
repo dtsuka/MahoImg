@@ -20,11 +20,25 @@ public final class AppState: ObservableObject {
         jobs.first { $0.id == selectedJobID }
     }
 
-    public func addURLs(_ urls: [URL]) {
+    public func addURLs(_ urls: [URL], activateAdded: Bool = false) {
         let newJobs = urls.flatMap { resolvedJobs(from: $0) }
-        for job in newJobs where !jobs.contains(where: { $0.inputURL == job.inputURL && $0.pageIndex == job.pageIndex }) {
+        var jobToActivate: ImageJob?
+
+        for job in newJobs {
+            if let existingJob = jobs.first(where: { $0.inputURL == job.inputURL && $0.pageIndex == job.pageIndex }) {
+                jobToActivate = jobToActivate ?? existingJob
+                continue
+            }
+
             jobs.append(job)
+            jobToActivate = jobToActivate ?? job
         }
+
+        if activateAdded, let jobToActivate {
+            selectedJobID = jobToActivate.id
+            return
+        }
+
         if selectedJobID == nil {
             selectedJobID = jobs.first?.id
         }
