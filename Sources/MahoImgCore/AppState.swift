@@ -12,11 +12,15 @@ public final class AppState: ObservableObject {
     @Published var progressText = "待機中"
     private var didShowMissingMagickGuide = false
     private var processingTask: Task<Void, Never>?
+    private var runningProcess: Process?
 
     public init() {}
 
     var selectedJob: ImageJob? {
-        selectedJobs.first
+        if case .single(let job) = selectionMode {
+            return job
+        }
+        return nil
     }
 
     var selectedJobs: [ImageJob] {
@@ -27,28 +31,46 @@ public final class AppState: ObservableObject {
         !selectedJobIDs.isEmpty
     }
 
-    public func addURLs(_ urls: [URL], activateAdded: Bool = false) {
+    var selectionMode: SelectionMode {
+        let selected = selectedJobs
+        switch selected.count {
+        case 0:
+            return .none
+        case 1:
+            return .single(selected[0])
+        default:
+            return .multiple(selected)
+        }
+    }
+
+    @discardableResult
+    public func addURLs(_ urls: [URL]) -> Set<UUID> {
         let newJobs = urls.flatMap { resolvedJobs(from: $0) }
-        var jobsToActivate: [ImageJob] = []
+        var addedJobs: [ImageJob] = []
 
         for job in newJobs {
             if let existingJob = jobs.first(where: { $0.inputURL == job.inputURL && $0.pageIndex == job.pageIndex }) {
-                jobsToActivate.append(existingJob)
+                addedJobs.append(existingJob)
                 continue
             }
 
             jobs.append(job)
-            jobsToActivate.append(job)
-        }
-
-        if activateAdded, !jobsToActivate.isEmpty {
-            selectedJobIDs = Set(jobsToActivate.map(\.id))
-            return
+            addedJobs.append(job)
         }
 
         if selectedJobIDs.isEmpty, let firstJobID = jobs.first?.id {
             selectedJobIDs = [firstJobID]
         }
+
+        return Set(addedJobs.map(\.id))
+    }
+
+    public func selectJobIDs(_ ids: Set<UUID>) {
+        selectedJobIDs = ids
+    }
+
+    func selectJobs(_ jobs: [ImageJob]) {
+        selectJobIDs(Set(jobs.map(\.id)))
     }
 
     func removeSelected() {
@@ -62,17 +84,18 @@ public final class AppState: ObservableObject {
         jobs.removeAll()
         selectedJobIDs = []
         progressText = "待機中"
+        PreviewImageCache.clear()
     }
 
     func resetCropForSelected() {
-        guard let selectedJob else { return }
-        selectedJob.cropRect = .full(size: selectedJob.pixelSize)
+        guard case .single(let job) = selectionMode else { return }
+        job.cropRect = .full(size: job.pixelSize)
     }
 
     func setPage(_ pageIndex: Int, for job: ImageJob) {
         let clampedIndex = min(max(pageIndex, 0), job.pageCount - 1)
         guard clampedIndex != job.pageIndex else { return }
-        guard let size = ImageMetadataReader.pixelSize(for: job.inputURL, pageIndex: clampedIndex) else { return }
+        guard let size = ImageMetadataReader.pixelSize(for: job.source, pageIndex: clampedIndex) else { return }
         job.pageIndex = clampedIndex
         job.pixelSize = size
         job.cropRect = .full(size: size)
@@ -95,6 +118,8 @@ public final class AppState: ObservableObject {
 
     func cancelProcessing() {
         processingTask?.cancel()
+        runningProcess?.terminate()
+        runningProcess = nil
     }
 
     func showMissingMagickGuideIfNeeded() {
@@ -109,6 +134,8 @@ public final class AppState: ObservableObject {
         guard !targetJobs.isEmpty else { return }
 
         processingTask?.cancel()
+        runningProcess?.terminate()
+        runningProcess = nil
         isProcessing = true
         progressText = "開始中"
         let settingsSnapshot = settings
@@ -121,6 +148,7 @@ public final class AppState: ObservableObject {
                 }
                 isProcessing = false
                 processingTask = nil
+                runningProcess = nil
             }
 
             for job in targetJobs {
@@ -143,7 +171,11 @@ public final class AppState: ObservableObject {
                         settings: settingsSnapshot,
                         cropRect: job.cropRect,
                         imageSize: job.pixelSize,
-                        pageIndex: job.pageIndex
+                        source: job.source,
+                        pageIndex: job.pageIndex,
+                        onProcessStarted: { [weak self] process in
+                            self?.runningProcess = process
+                        }
                     )
                     guard !Task.isCancelled else {
                         progressText = "キャンセルしました"
@@ -151,6 +183,10 @@ public final class AppState: ObservableObject {
                     }
                     job.status = .succeeded(outputURL)
                 } catch {
+                    if Task.isCancelled {
+                        progressText = "キャンセルしました"
+                        return
+                    }
                     job.status = .failed(error.localizedDescription)
                 }
                 completed += 1
@@ -180,35 +216,35 @@ public final class AppState: ObservableObject {
                 return $0.inputURL.path < $1.inputURL.path
             }
         }
-        guard ImageSource.classify(url) != nil else { return [] }
-        return jobs(for: url)
+        guard let source = ImageSource.classify(url) else { return [] }
+        return jobs(for: url, source: source)
     }
 
-    private func jobs(for url: URL) -> [ImageJob] {
-        if case .pdf = ImageSource.classify(url) {
-            return pdfJobs(for: url)
+    private func jobs(for url: URL, source: ImageSource) -> [ImageJob] {
+        if case .pdf = source {
+            return pdfJobs(for: url, source: source)
         }
 
-        guard let size = ImageMetadataReader.pixelSize(for: url) else { return [] }
-        return [ImageJob(inputURL: url, pixelSize: size)]
+        guard let size = ImageMetadataReader.pixelSize(for: source) else { return [] }
+        return [ImageJob(inputURL: url, source: source, pixelSize: size)]
     }
 
-    private func pdfJobs(for url: URL) -> [ImageJob] {
+    private func pdfJobs(for url: URL, source: ImageSource) -> [ImageJob] {
         guard let document = PDFDocument(url: url), document.pageCount > 0 else { return [] }
         let pageCount = document.pageCount
         if pageCount == 1 {
             guard let size = ImageMetadataReader.pdfPageSize(for: url, pageIndex: 0) else { return [] }
-            return [ImageJob(inputURL: url, pixelSize: size, pageCount: pageCount)]
+            return [ImageJob(inputURL: url, source: source, pixelSize: size, pageCount: pageCount)]
         }
 
         switch PlatformServices.multiPagePDFChoice(for: url, pageCount: pageCount) {
         case .singleItem:
             guard let size = ImageMetadataReader.pdfPageSize(for: url, pageIndex: 0) else { return [] }
-            return [ImageJob(inputURL: url, pixelSize: size, pageCount: pageCount)]
+            return [ImageJob(inputURL: url, source: source, pixelSize: size, pageCount: pageCount)]
         case .allPages:
             return (0..<pageCount).compactMap { pageIndex in
                 guard let size = ImageMetadataReader.pdfPageSize(for: url, pageIndex: pageIndex) else { return nil }
-                return ImageJob(inputURL: url, pixelSize: size, pageIndex: pageIndex, pageCount: pageCount)
+                return ImageJob(inputURL: url, source: source, pixelSize: size, pageIndex: pageIndex, pageCount: pageCount)
             }
         case .cancel:
             return []

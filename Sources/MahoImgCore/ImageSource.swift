@@ -1,9 +1,19 @@
 import Foundation
+import UniformTypeIdentifiers
 
 enum ImageSource: Equatable {
     case raster(URL)
     case photoshop(URL)
     case pdf(URL)
+
+    static let supportedExtensions = Set([
+        "jpg", "jpeg", "png", "webp", "heic", "heif", "tif", "tiff", "psd", "psb", "pdf"
+    ])
+
+    static let selectableContentTypes: [UTType] = {
+        let explicitTypes = supportedExtensions.compactMap { UTType(filenameExtension: $0) }
+        return [.image, .pdf, .folder] + explicitTypes
+    }()
 
     static func classify(_ url: URL) -> ImageSource? {
         switch url.pathExtension.lowercased() {
@@ -11,7 +21,7 @@ enum ImageSource: Equatable {
             return .pdf(url)
         case "psd", "psb":
             return .photoshop(url)
-        case let ext where ImageProcessor.supportedExtensions.contains(ext):
+        case let ext where supportedExtensions.contains(ext):
             return .raster(url)
         default:
             return nil
@@ -42,11 +52,5 @@ enum ImageSource: Equatable {
         case .raster(let url), .pdf(let url):
             return url.path
         }
-    }
-}
-
-extension ImageJob {
-    var source: ImageSource {
-        ImageSource.classify(inputURL) ?? .raster(inputURL)
     }
 }

@@ -7,13 +7,14 @@ struct PreviewPane: View {
     var body: some View {
         ZStack {
             Color(nsColor: .textBackgroundColor)
-            if state.selectedJobs.count > 1 {
-                MultiSelectionPreview(jobs: state.selectedJobs)
+            switch state.selectionMode {
+            case .multiple(let jobs):
+                MultiSelectionPreview(jobs: jobs)
                     .padding(20)
-            } else if let job = state.selectedJob {
+            case .single(let job):
                 CropPreview(job: job)
                     .padding(20)
-            } else {
+            case .none:
                 VStack(spacing: 12) {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.system(size: 48))
@@ -71,7 +72,7 @@ private struct SelectedJobPreviewTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ThumbnailCanvas(job: job)
+            PreviewCanvas(job: job, mode: .thumbnail)
                 .aspectRatio(1, contentMode: .fit)
                 .background(Color(nsColor: .windowBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -93,83 +94,57 @@ struct CropPreview: View {
     @ObservedObject var job: ImageJob
 
     var body: some View {
-        CropCanvas(job: job)
+        PreviewCanvas(job: job, mode: .crop)
     }
 }
 
-private struct CropCanvas: NSViewRepresentable {
-    @ObservedObject var job: ImageJob
-
-    func makeNSView(context: Context) -> CropCanvasView {
-        CropCanvasView()
-    }
-
-    func updateNSView(_ nsView: CropCanvasView, context: Context) {
-        nsView.job = job
-        nsView.image = ImageMetadataReader.previewImage(
-            for: job.inputURL,
-            pixelSize: job.pixelSize,
-            pageIndex: job.pageIndex
-        )
-        nsView.needsDisplay = true
-    }
+private enum PreviewCanvasMode {
+    case thumbnail
+    case crop
 }
 
-private struct ThumbnailCanvas: NSViewRepresentable {
+private struct PreviewCanvas: NSViewRepresentable {
     @ObservedObject var job: ImageJob
+    let mode: PreviewCanvasMode
 
-    func makeNSView(context: Context) -> ThumbnailCanvasView {
-        ThumbnailCanvasView()
+    func makeNSView(context: Context) -> PreviewCanvasView {
+        PreviewCanvasView(mode: mode)
     }
 
-    func updateNSView(_ nsView: ThumbnailCanvasView, context: Context) {
+    func updateNSView(_ nsView: PreviewCanvasView, context: Context) {
         nsView.job = job
-        nsView.image = ImageMetadataReader.previewImage(
-            for: job.inputURL,
-            pixelSize: job.pixelSize,
-            pageIndex: job.pageIndex
-        )
+        nsView.image = PreviewImageCache.image(for: job)
         nsView.needsDisplay = true
     }
 }
 
 @MainActor
-private final class ThumbnailCanvasView: NSView {
-    var job: ImageJob?
-    var image: NSImage?
-
-    override var isFlipped: Bool { true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard let job, let image else { return }
-
-        NSGraphicsContext.current?.imageInterpolation = .high
-        let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
-        PreviewDrawing.drawImage(
-            image,
-            in: mapper.imageFrame,
-            verticallyFlipped: job.source.drawsVerticallyFlipped
-        )
-    }
-}
-
-@MainActor
-private final class CropCanvasView: NSView {
+private final class PreviewCanvasView: NSView {
+    let mode: PreviewCanvasMode
     var job: ImageJob?
     var image: NSImage?
     private var action: CropDragAction?
     private var startPoint: CGPoint = .zero
     private var startRect: CropRect?
 
+    init(mode: PreviewCanvasMode) {
+        self.mode = mode
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
     override var isFlipped: Bool { true }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        true
+        mode == .crop
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(point) ? self : nil
+        mode == .crop && bounds.contains(point) ? self : nil
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -178,7 +153,6 @@ private final class CropCanvasView: NSView {
 
         let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
         let imageFrame = mapper.imageFrame
-        let cropFrame = mapper.viewRect(from: job.cropRect)
 
         NSGraphicsContext.current?.imageInterpolation = .high
         PreviewDrawing.drawImage(
@@ -186,6 +160,10 @@ private final class CropCanvasView: NSView {
             in: imageFrame,
             verticallyFlipped: job.source.drawsVerticallyFlipped
         )
+
+        guard mode == .crop else { return }
+
+        let cropFrame = mapper.viewRect(from: job.cropRect)
 
         let dimPath = NSBezierPath(rect: imageFrame)
         dimPath.append(NSBezierPath(rect: cropFrame))
@@ -207,7 +185,7 @@ private final class CropCanvasView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let job else { return }
+        guard mode == .crop, let job else { return }
         let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
         startPoint = convert(event.locationInWindow, from: nil)
         startRect = job.cropRect
@@ -215,7 +193,7 @@ private final class CropCanvasView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let job, let startRect, let action else { return }
+        guard mode == .crop, let job, let startRect, let action else { return }
         let point = convert(event.locationInWindow, from: nil)
         let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
         guard mapper.imageFrame.width > 0, mapper.imageFrame.height > 0 else { return }

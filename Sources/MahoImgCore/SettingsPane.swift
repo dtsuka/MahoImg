@@ -69,9 +69,13 @@ struct SettingsPane: View {
             }
 
             Section("トリミング") {
-                if let job = state.selectedJob {
+                switch state.selectionMode {
+                case .single(let job):
                     CropControls(job: job)
-                } else {
+                case .multiple(let jobs):
+                    Text("\(jobs.count)件選択中です。トリミングは1件選択時のみ編集できます。")
+                        .foregroundStyle(.secondary)
+                case .none:
                     Text("画像を選択してください")
                         .foregroundStyle(.secondary)
                 }

@@ -24,7 +24,7 @@ enum PlatformServices {
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = ImageProcessor.selectableContentTypes
+        panel.allowedContentTypes = ImageSource.selectableContentTypes
         panel.prompt = "追加"
         guard panel.runModal() == .OK else { return [] }
         return panel.urls

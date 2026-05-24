@@ -27,7 +27,7 @@ enum ImageProcessorError: LocalizedError {
 struct ImageProcessor {
     static let pdfRasterizationDPI = 600.0
     private static let pdfPointsPerInch = 72.0
-    static var magickPath: String { resolveMagickPath() }
+    static let magickPath = resolveMagickPath()
     static let magickInstallGuide = """
     WebP 書き出しなどの変換処理には ImageMagick が必要です。Homebrew を使っている場合は、ターミナルで次を実行してください。
 
@@ -39,26 +39,6 @@ struct ImageProcessor {
 
     MahoImg は /opt/homebrew/bin/magick、/usr/local/bin/magick、PATH 上の magick の順に ImageMagick を探します。Homebrew が入っていない場合は、先に Homebrew をインストールしてください。
     """
-
-    static let supportedExtensions = Set(["jpg", "jpeg", "png", "webp", "heic", "heif", "tif", "tiff", "psd", "psb", "pdf"])
-    static let selectableContentTypes: [UTType] = {
-        let explicitTypes = supportedExtensions.compactMap { UTType(filenameExtension: $0) }
-        return [.image, .pdf, .folder] + explicitTypes
-    }()
-
-    static func isSupportedImage(_ url: URL) -> Bool {
-        ImageSource.classify(url) != nil
-    }
-
-    static func isPhotoshopDocument(_ url: URL) -> Bool {
-        if case .photoshop = ImageSource.classify(url) { return true }
-        return false
-    }
-
-    static func isPDFDocument(_ url: URL) -> Bool {
-        if case .pdf = ImageSource.classify(url) { return true }
-        return false
-    }
 
     static var pdfRasterizationScale: Double {
         pdfRasterizationDPI / pdfPointsPerInch
@@ -103,8 +83,8 @@ struct ImageProcessor {
         return commonPaths.first ?? "/opt/homebrew/bin/magick"
     }
 
-    static func inputArgument(for inputURL: URL) -> String {
-        ImageSource.classify(inputURL)?.magickInputPath ?? inputURL.path
+    static func inputArgument(for source: ImageSource) -> String {
+        source.magickInputPath
     }
 
     static func outputURL(
@@ -149,9 +129,10 @@ struct ImageProcessor {
         settings: ConversionSettings,
         cropRect: CropRect,
         imageSize: CGSize,
+        source: ImageSource,
         trimsWhitespace: Bool = false
     ) -> [String] {
-        var args = [inputArgument(for: inputURL), "-auto-orient"]
+        var args = [inputArgument(for: source), "-auto-orient"]
         let crop = cropRect.clamped(to: imageSize)
         if crop.width > 0, crop.height > 0 {
             args += [
@@ -204,14 +185,12 @@ struct ImageProcessor {
         settings: ConversionSettings,
         cropRect: CropRect,
         imageSize: CGSize,
-        pageIndex: Int = 0
+        source: ImageSource,
+        pageIndex: Int = 0,
+        onProcessStarted: (@MainActor (Process) -> Void)? = nil
     ) async throws {
         guard FileManager.default.isExecutableFile(atPath: magickPath) else {
             throw ImageProcessorError.missingMagick
-        }
-
-        guard let source = ImageSource.classify(inputURL) else {
-            throw ImageProcessorError.processFailed("サポートされていないファイル形式です。")
         }
 
         let pdfScale = pdfRasterizationScale
@@ -230,6 +209,7 @@ struct ImageProcessor {
             processImageSize = imageSize
         }
         let trimsWhitespace = rasterizedInput != nil && settings.pdfAutoTrimWhitespace
+        let processSource: ImageSource = rasterizedInput.map { .raster($0) } ?? source
 
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
@@ -240,6 +220,7 @@ struct ImageProcessor {
                 settings: settings,
                 cropRect: processCropRect,
                 imageSize: processImageSize,
+                source: processSource,
                 trimsWhitespace: trimsWhitespace
             )
 
@@ -259,6 +240,11 @@ struct ImageProcessor {
             }
 
             do {
+                if let onProcessStarted {
+                    Task { @MainActor in
+                        onProcessStarted(process)
+                    }
+                }
                 try process.run()
             } catch {
                 if let rasterizedInput {

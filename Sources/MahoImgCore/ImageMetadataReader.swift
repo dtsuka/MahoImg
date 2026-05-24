@@ -5,10 +5,14 @@ import PDFKit
 enum ImageMetadataReader {
     static func pixelSize(for url: URL, pageIndex: Int = 0) -> CGSize? {
         guard let source = ImageSource.classify(url) else { return nil }
+        return pixelSize(for: source, pageIndex: pageIndex)
+    }
+
+    static func pixelSize(for source: ImageSource, pageIndex: Int = 0) -> CGSize? {
         switch source {
-        case .pdf:
+        case .pdf(let url):
             return pdfPageSize(for: url, pageIndex: pageIndex)
-        case .raster, .photoshop:
+        case .raster(let url), .photoshop(let url):
             return rasterPixelSize(for: url)
         }
     }
@@ -22,16 +26,15 @@ enum ImageMetadataReader {
     }
 
     @MainActor
-    static func previewImage(for url: URL, pixelSize: CGSize, pageIndex: Int = 0) -> NSImage? {
-        guard let source = ImageSource.classify(url) else { return nil }
+    static func previewImage(for source: ImageSource, pixelSize: CGSize, pageIndex: Int = 0) -> NSImage? {
         switch source {
-        case .pdf:
+        case .pdf(let url):
             guard let document = PDFDocument(url: url),
                   let page = document.page(at: pageIndex) else {
                 return nil
             }
             return page.thumbnail(of: pixelSize, for: .cropBox)
-        case .raster, .photoshop:
+        case .raster(let url), .photoshop(let url):
             if let cgImageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
                let cgImage = CGImageSourceCreateImageAtIndex(cgImageSource, 0, nil) {
                 return NSImage(cgImage: cgImage, size: pixelSize)

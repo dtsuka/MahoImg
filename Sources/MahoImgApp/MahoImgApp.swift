@@ -13,18 +13,20 @@ struct MahoImgApp: App {
                 .environmentObject(state)
                 .onAppear {
                     appDelegate.openURLsHandler = { [state] urls in
-                        state.addURLs(urls, activateAdded: true)
+                        state.selectJobIDs(state.addURLs(urls))
                     }
 
                     let pendingURLs = appDelegate.consumePendingURLs()
                     if !pendingURLs.isEmpty {
-                        state.addURLs(pendingURLs, activateAdded: true)
+                        state.selectJobIDs(state.addURLs(pendingURLs))
                     }
                 }
                 .frame(minWidth: 980, minHeight: 680)
                 .background(WindowTitleBarConfigurator())
+                .handlesExternalEvents(preferring: [], allowing: [])
         }
         .windowStyle(.titleBar)
+        .handlesExternalEvents(matching: [])
     }
 }
 
@@ -32,7 +34,7 @@ struct MahoImgApp: App {
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     var openURLsHandler: (([URL]) -> Void)?
     private var pendingURLs: [URL] = []
-    private var openURLsFlushTask: Task<Void, Never>?
+    private var openURLsFlushScheduled = false
 
     func application(_ application: NSApplication, open urls: [URL]) {
         pendingURLs.append(contentsOf: urls)
@@ -46,7 +48,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldOpenUntitledFile(_ application: NSApplication) -> Bool {
-        pendingURLs.isEmpty
+        false
     }
 
     func consumePendingURLs() -> [URL] {
@@ -55,10 +57,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func scheduleOpenURLsFlush(application: NSApplication) {
-        openURLsFlushTask?.cancel()
-        openURLsFlushTask = Task { @MainActor [weak self, weak application] in
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled, let self else { return }
+        guard !openURLsFlushScheduled else { return }
+        openURLsFlushScheduled = true
+        DispatchQueue.main.async { [weak self, weak application] in
+            guard let self else { return }
+            self.openURLsFlushScheduled = false
             self.flushPendingOpenURLs()
             if let application {
                 self.showMainWindow(application: application)

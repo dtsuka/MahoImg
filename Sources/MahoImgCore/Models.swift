@@ -179,6 +179,12 @@ struct ConversionSettings: Codable, Equatable {
     }
 }
 
+enum SelectionMode {
+    case none
+    case single(ImageJob)
+    case multiple([ImageJob])
+}
+
 enum JobStatus: Equatable {
     case pending
     case processing
@@ -199,6 +205,7 @@ enum JobStatus: Equatable {
 final class ImageJob: ObservableObject, Identifiable {
     let id = UUID()
     let inputURL: URL
+    let source: ImageSource
     let pageCount: Int
     @Published var pageIndex: Int
     @Published var pixelSize: CGSize
@@ -215,8 +222,9 @@ final class ImageJob: ObservableObject, Identifiable {
         return "\(pageIndex + 1)/\(pageCount) ページ"
     }
 
-    init(inputURL: URL, pixelSize: CGSize, pageIndex: Int = 0, pageCount: Int = 1) {
+    init(inputURL: URL, source: ImageSource, pixelSize: CGSize, pageIndex: Int = 0, pageCount: Int = 1) {
         self.inputURL = inputURL
+        self.source = source
         self.pageIndex = pageIndex
         self.pageCount = pageCount
         self.pixelSize = pixelSize
