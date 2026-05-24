@@ -93,6 +93,22 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(state.selectedJob?.inputURL, firstURL)
     }
 
+    func testAddURLsCanActivateMultipleDroppedImages() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let firstURL = directory.appendingPathComponent("first.png")
+        let secondURL = directory.appendingPathComponent("second.png")
+        try writeTestPNG(to: firstURL)
+        try writeTestPNG(to: secondURL)
+
+        let state = AppState()
+        state.addURLs([firstURL, secondURL], activateAdded: true)
+
+        XCTAssertEqual(state.selectedJobs.map(\.inputURL), [firstURL, secondURL])
+    }
+
     func testSelectedJobsKeepsListOrderForMultipleSelection() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

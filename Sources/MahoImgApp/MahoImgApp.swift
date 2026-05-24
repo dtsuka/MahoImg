@@ -32,20 +32,40 @@ struct MahoImgApp: App {
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     var openURLsHandler: (([URL]) -> Void)?
     private var pendingURLs: [URL] = []
+    private var openURLsFlushTask: Task<Void, Never>?
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        if let openURLsHandler {
-            openURLsHandler(urls)
-        } else {
-            pendingURLs.append(contentsOf: urls)
-        }
-        application.activate(ignoringOtherApps: true)
-        application.windows.first?.makeKeyAndOrderFront(nil)
+        pendingURLs.append(contentsOf: urls)
+        scheduleOpenURLsFlush(application: application)
     }
 
     func consumePendingURLs() -> [URL] {
         defer { pendingURLs.removeAll() }
         return pendingURLs
+    }
+
+    private func scheduleOpenURLsFlush(application: NSApplication) {
+        openURLsFlushTask?.cancel()
+        openURLsFlushTask = Task { @MainActor [weak self, weak application] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled, let self else { return }
+            self.flushPendingOpenURLs()
+            if let application {
+                self.showMainWindow(application: application)
+            }
+        }
+    }
+
+    private func flushPendingOpenURLs() {
+        guard let openURLsHandler else { return }
+        let urls = consumePendingURLs()
+        guard !urls.isEmpty else { return }
+        openURLsHandler(urls)
+    }
+
+    private func showMainWindow(application: NSApplication) {
+        application.activate(ignoringOtherApps: true)
+        application.windows.first?.makeKeyAndOrderFront(nil)
     }
 }
 

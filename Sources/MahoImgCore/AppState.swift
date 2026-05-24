@@ -30,20 +30,20 @@ public final class AppState: ObservableObject {
 
     public func addURLs(_ urls: [URL], activateAdded: Bool = false) {
         let newJobs = urls.flatMap { resolvedJobs(from: $0) }
-        var jobToActivate: ImageJob?
+        var jobsToActivate: [ImageJob] = []
 
         for job in newJobs {
             if let existingJob = jobs.first(where: { $0.inputURL == job.inputURL && $0.pageIndex == job.pageIndex }) {
-                jobToActivate = jobToActivate ?? existingJob
+                jobsToActivate.append(existingJob)
                 continue
             }
 
             jobs.append(job)
-            jobToActivate = jobToActivate ?? job
+            jobsToActivate.append(job)
         }
 
-        if activateAdded, let jobToActivate {
-            selectedJobIDs = [jobToActivate.id]
+        if activateAdded, !jobsToActivate.isEmpty {
+            selectedJobIDs = Set(jobsToActivate.map(\.id))
             return
         }
 
