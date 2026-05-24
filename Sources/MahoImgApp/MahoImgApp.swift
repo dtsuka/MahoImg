@@ -39,6 +39,16 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         scheduleOpenURLsFlush(application: application)
     }
 
+    func applicationShouldHandleReopen(_ application: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !flag else { return false }
+        showMainWindow(application: application)
+        return false
+    }
+
+    func applicationShouldOpenUntitledFile(_ application: NSApplication) -> Bool {
+        pendingURLs.isEmpty
+    }
+
     func consumePendingURLs() -> [URL] {
         defer { pendingURLs.removeAll() }
         return pendingURLs
@@ -47,7 +57,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleOpenURLsFlush(application: NSApplication) {
         openURLsFlushTask?.cancel()
         openURLsFlushTask = Task { @MainActor [weak self, weak application] in
-            try? await Task.sleep(for: .milliseconds(120))
+            try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled, let self else { return }
             self.flushPendingOpenURLs()
             if let application {
@@ -64,8 +74,19 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showMainWindow(application: NSApplication) {
+        if let visibleWindow = application.windows.first(where: { $0.isVisible && !$0.isMiniaturized }) {
+            guard application.isHidden else { return }
+            application.unhide(nil)
+            visibleWindow.orderFront(nil)
+            return
+        }
+
         application.activate(ignoringOtherApps: true)
-        application.windows.first?.makeKeyAndOrderFront(nil)
+        guard let window = application.windows.first else { return }
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
     }
 }
 
