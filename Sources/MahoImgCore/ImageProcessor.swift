@@ -40,28 +40,6 @@ struct ImageProcessor {
     MahoImg は /opt/homebrew/bin/magick、/usr/local/bin/magick、PATH 上の magick の順に ImageMagick を探します。Homebrew が入っていない場合は、先に Homebrew をインストールしてください。
     """
 
-    static let supportedExtensions = Set(["jpg", "jpeg", "png", "webp", "heic", "heif", "tif", "tiff", "psd", "psb", "pdf"])
-    static let selectableContentTypes: [UTType] = {
-        let explicitTypes = supportedExtensions.compactMap { UTType(filenameExtension: $0) }
-        return [.image, .pdf, .folder] + explicitTypes
-    }()
-
-    static func isSupportedImage(_ url: URL) -> Bool {
-        supportedExtensions.contains(url.pathExtension.lowercased())
-    }
-
-    static func isPhotoshopDocument(_ url: URL) -> Bool {
-        ["psd", "psb"].contains(url.pathExtension.lowercased())
-    }
-
-    static func isPDFDocument(_ url: URL) -> Bool {
-        url.pathExtension.lowercased() == "pdf"
-    }
-
-    static func needsPDFRasterization(_ url: URL) -> Bool {
-        isPDFDocument(url)
-    }
-
     static var pdfRasterizationScale: Double {
         pdfRasterizationDPI / pdfPointsPerInch
     }
@@ -75,8 +53,8 @@ struct ImageProcessor {
         )
     }
 
-    static func isMagickAvailable(path: String = magickPath, fileManager: FileManager = .default) -> Bool {
-        fileManager.isExecutableFile(atPath: path)
+    static func isMagickAvailable(path: String? = nil, fileManager: FileManager = .default) -> Bool {
+        fileManager.isExecutableFile(atPath: path ?? magickPath)
     }
 
     static func resolveMagickPath(
@@ -105,11 +83,8 @@ struct ImageProcessor {
         return commonPaths.first ?? "/opt/homebrew/bin/magick"
     }
 
-    static func inputArgument(for inputURL: URL, pageIndex: Int = 0) -> String {
-        if isPhotoshopDocument(inputURL) {
-            return "\(inputURL.path)[0]"
-        }
-        return inputURL.path
+    static func inputArgument(for source: ImageSource) -> String {
+        source.magickInputPath
     }
 
     static func outputURL(
@@ -153,11 +128,12 @@ struct ImageProcessor {
         outputURL: URL,
         settings: ConversionSettings,
         cropRect: CropRect,
-        pageIndex: Int = 0,
+        imageSize: CGSize,
+        source: ImageSource,
         trimsWhitespace: Bool = false
     ) -> [String] {
-        var args = [inputArgument(for: inputURL, pageIndex: pageIndex), "-auto-orient"]
-        let crop = cropRect.clamped(to: CGSize(width: max(cropRect.x + cropRect.width, cropRect.width), height: max(cropRect.y + cropRect.height, cropRect.height)))
+        var args = [inputArgument(for: source), "-auto-orient"]
+        let crop = cropRect.clamped(to: imageSize)
         if crop.width > 0, crop.height > 0 {
             args += [
                 "-crop",
@@ -203,20 +179,50 @@ struct ImageProcessor {
         return args
     }
 
-    static func run(inputURL: URL, outputURL: URL, settings: ConversionSettings, cropRect: CropRect, pageIndex: Int = 0) async throws {
+    static func run(
+        inputURL: URL,
+        outputURL: URL,
+        settings: ConversionSettings,
+        cropRect: CropRect,
+        imageSize: CGSize,
+        source: ImageSource,
+        pageIndex: Int = 0,
+        onProcessStarted: (@MainActor (Process) -> Void)? = nil
+    ) async throws {
         guard FileManager.default.isExecutableFile(atPath: magickPath) else {
             throw ImageProcessorError.missingMagick
         }
+
         let pdfScale = pdfRasterizationScale
-        let rasterizedInput = try needsPDFRasterization(inputURL) ? rasterizedPDFInput(inputURL, pageIndex: pageIndex, scale: pdfScale) : nil
+        let rasterizedInput = try source.requiresPDFRasterization
+            ? rasterizedPDFInput(inputURL, pageIndex: pageIndex, scale: pdfScale)
+            : nil
         let processInputURL = rasterizedInput ?? inputURL
         let processCropRect = rasterizedInput == nil ? cropRect : scaledCropRect(cropRect, by: pdfScale)
+        let processImageSize: CGSize
+        if rasterizedInput != nil {
+            guard let rasterSize = rasterizedPDFPixelSize(for: inputURL, pageIndex: pageIndex, scale: pdfScale) else {
+                throw ImageProcessorError.pdfRenderFailed
+            }
+            processImageSize = rasterSize
+        } else {
+            processImageSize = imageSize
+        }
         let trimsWhitespace = rasterizedInput != nil && settings.pdfAutoTrimWhitespace
+        let processSource: ImageSource = rasterizedInput.map { .raster($0) } ?? source
 
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: magickPath)
-            process.arguments = arguments(inputURL: processInputURL, outputURL: outputURL, settings: settings, cropRect: processCropRect, trimsWhitespace: trimsWhitespace)
+            process.arguments = arguments(
+                inputURL: processInputURL,
+                outputURL: outputURL,
+                settings: settings,
+                cropRect: processCropRect,
+                imageSize: processImageSize,
+                source: processSource,
+                trimsWhitespace: trimsWhitespace
+            )
 
             let errorPipe = Pipe()
             process.standardError = errorPipe
@@ -234,6 +240,11 @@ struct ImageProcessor {
             }
 
             do {
+                if let onProcessStarted {
+                    Task { @MainActor in
+                        onProcessStarted(process)
+                    }
+                }
                 try process.run()
             } catch {
                 if let rasterizedInput {
@@ -242,6 +253,18 @@ struct ImageProcessor {
                 continuation.resume(throwing: error)
             }
         }
+    }
+
+    static func rasterizedPDFPixelSize(for inputURL: URL, pageIndex: Int, scale: Double) -> CGSize? {
+        guard let document = PDFDocument(url: inputURL),
+              let page = document.page(at: pageIndex) else {
+            return nil
+        }
+        let bounds = page.bounds(for: .cropBox)
+        return CGSize(
+            width: max(1, (bounds.width * scale).rounded(.up)),
+            height: max(1, (bounds.height * scale).rounded(.up))
+        )
     }
 
     static func rasterizedPDFInput(_ inputURL: URL, pageIndex: Int, scale: Double) throws -> URL {

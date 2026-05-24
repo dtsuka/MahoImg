@@ -1,6 +1,4 @@
 import AppKit
-import ImageIO
-import PDFKit
 import SwiftUI
 
 struct PreviewPane: View {
@@ -9,10 +7,14 @@ struct PreviewPane: View {
     var body: some View {
         ZStack {
             Color(nsColor: .textBackgroundColor)
-            if let job = state.selectedJob {
+            switch state.selectionMode {
+            case .multiple(let jobs):
+                MultiSelectionPreview(jobs: jobs)
+                    .padding(20)
+            case .single(let job):
                 CropPreview(job: job)
                     .padding(20)
-            } else {
+            case .none:
                 VStack(spacing: 12) {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.system(size: 48))
@@ -25,143 +27,124 @@ struct PreviewPane: View {
     }
 }
 
+private struct MultiSelectionPreview: View {
+    let jobs: [ImageJob]
+    private let maxPreviewCount = 12
+    private let columns = [
+        GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 14)
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("選択中: \(jobs.count)件")
+                    .font(.headline)
+                Spacer()
+                if omittedCount > 0 {
+                    Text("ほか\(omittedCount)件を省略")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ScrollView {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                    ForEach(visibleJobs) { job in
+                        SelectedJobPreviewTile(job: job)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var visibleJobs: ArraySlice<ImageJob> {
+        jobs.prefix(maxPreviewCount)
+    }
+
+    private var omittedCount: Int {
+        max(0, jobs.count - maxPreviewCount)
+    }
+}
+
+private struct SelectedJobPreviewTile: View {
+    @ObservedObject var job: ImageJob
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            PreviewCanvas(job: job, mode: .thumbnail)
+                .aspectRatio(1, contentMode: .fit)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                }
+
+            Text(job.displayName)
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(job.displayName)
+        }
+    }
+}
+
 struct CropPreview: View {
     @ObservedObject var job: ImageJob
 
     var body: some View {
-        CropCanvas(job: job)
+        PreviewCanvas(job: job, mode: .crop)
     }
 }
 
-private enum CropDragAction {
-    case move
-    case resize(ResizeAnchor)
+private enum PreviewCanvasMode {
+    case thumbnail
+    case crop
 }
 
-private struct CropInteractionOverlay: View {
+private struct PreviewCanvas: NSViewRepresentable {
     @ObservedObject var job: ImageJob
-    let mapper: PreviewMapper
-    @State private var startRect: CropRect?
-    @State private var action: CropDragAction?
+    let mode: PreviewCanvasMode
 
-    var body: some View {
-        Rectangle()
-            .fill(Color.accentColor.opacity(0.001))
-            .contentShape(Rectangle())
-            .gesture(dragGesture)
+    func makeNSView(context: Context) -> PreviewCanvasView {
+        PreviewCanvasView(mode: mode)
     }
 
-    private var dragGesture: some Gesture {
-        DragGesture()
-            .onChanged { value in
-                if startRect == nil {
-                    startRect = job.cropRect
-                    action = dragAction(at: value.startLocation)
-                }
-                guard let startRect, let action else { return }
-                guard mapper.imageFrame.width > 0, mapper.imageFrame.height > 0 else { return }
-                let scaleX = job.pixelSize.width / mapper.imageFrame.width
-                let scaleY = job.pixelSize.height / mapper.imageFrame.height
-                let dx = value.translation.width * scaleX
-                let dy = value.translation.height * scaleY
-
-                switch action {
-                case .move:
-                    job.cropRect = CropRect(
-                        x: startRect.x + dx,
-                        y: startRect.y + dy,
-                        width: startRect.width,
-                        height: startRect.height
-                    ).clamped(to: job.pixelSize)
-                case .resize(let anchor):
-                    job.cropRect = anchor.resized(rect: startRect, dx: dx, dy: dy).clamped(to: job.pixelSize)
-                }
-            }
-            .onEnded { _ in
-                startRect = nil
-                action = nil
-            }
-    }
-
-    private func dragAction(at point: CGPoint) -> CropDragAction? {
-        let cropFrame = mapper.viewRect(from: job.cropRect)
-        let hitSize = 24.0
-        if point.distance(to: CGPoint(x: cropFrame.minX, y: cropFrame.minY)) <= hitSize {
-            return .resize(.bottomRight)
-        }
-        if point.distance(to: CGPoint(x: cropFrame.maxX, y: cropFrame.minY)) <= hitSize {
-            return .resize(.bottomLeft)
-        }
-        if point.distance(to: CGPoint(x: cropFrame.minX, y: cropFrame.maxY)) <= hitSize {
-            return .resize(.topRight)
-        }
-        if point.distance(to: CGPoint(x: cropFrame.maxX, y: cropFrame.maxY)) <= hitSize {
-            return .resize(.topLeft)
-        }
-        return cropFrame.contains(point) ? .move : nil
-    }
-}
-
-private extension CGPoint {
-    func distance(to other: CGPoint) -> Double {
-        let dx = x - other.x
-        let dy = y - other.y
-        return sqrt(dx * dx + dy * dy)
-    }
-}
-
-private struct CropCanvas: NSViewRepresentable {
-    @ObservedObject var job: ImageJob
-
-    func makeNSView(context: Context) -> CropCanvasView {
-        CropCanvasView()
-    }
-
-    func updateNSView(_ nsView: CropCanvasView, context: Context) {
+    func updateNSView(_ nsView: PreviewCanvasView, context: Context) {
         nsView.job = job
-        nsView.image = Self.previewImage(for: job)
+        nsView.image = PreviewImageCache.image(for: job)
         nsView.needsDisplay = true
-    }
-
-    private static func previewImage(for job: ImageJob) -> NSImage? {
-        if ImageProcessor.isPDFDocument(job.inputURL) {
-            return pdfPreviewImage(for: job)
-        }
-
-        if let source = CGImageSourceCreateWithURL(job.inputURL as CFURL, nil),
-           let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
-            return NSImage(cgImage: cgImage, size: job.pixelSize)
-        }
-
-        return NSImage(contentsOf: job.inputURL)
-    }
-
-    private static func pdfPreviewImage(for job: ImageJob) -> NSImage? {
-        guard let document = PDFDocument(url: job.inputURL),
-              let page = document.page(at: job.pageIndex) else {
-            return nil
-        }
-
-        return page.thumbnail(of: job.pixelSize, for: .cropBox)
     }
 }
 
 @MainActor
-private final class CropCanvasView: NSView {
+private final class PreviewCanvasView: NSView {
+    let mode: PreviewCanvasMode
     var job: ImageJob?
     var image: NSImage?
     private var action: CropDragAction?
     private var startPoint: CGPoint = .zero
     private var startRect: CropRect?
 
+    init(mode: PreviewCanvasMode) {
+        self.mode = mode
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
     override var isFlipped: Bool { true }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        true
+        mode == .crop
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(point) ? self : nil
+        mode == .crop && bounds.contains(point) ? self : nil
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -170,10 +153,17 @@ private final class CropCanvasView: NSView {
 
         let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
         let imageFrame = mapper.imageFrame
-        let cropFrame = mapper.viewRect(from: job.cropRect)
 
         NSGraphicsContext.current?.imageInterpolation = .high
-        drawPreviewImage(image, in: imageFrame, verticallyFlipped: ImageProcessor.isPhotoshopDocument(job.inputURL))
+        PreviewDrawing.drawImage(
+            image,
+            in: imageFrame,
+            verticallyFlipped: job.source.drawsVerticallyFlipped
+        )
+
+        guard mode == .crop else { return }
+
+        let cropFrame = mapper.viewRect(from: job.cropRect)
 
         let dimPath = NSBezierPath(rect: imageFrame)
         dimPath.append(NSBezierPath(rect: cropFrame))
@@ -195,14 +185,15 @@ private final class CropCanvasView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let job else { return }
+        guard mode == .crop, let job else { return }
+        let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
         startPoint = convert(event.locationInWindow, from: nil)
         startRect = job.cropRect
-        action = dragAction(at: startPoint)
+        action = CropInteraction.dragAction(at: startPoint, cropRect: job.cropRect, mapper: mapper)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let job, let startRect, let action else { return }
+        guard mode == .crop, let job, let startRect, let action else { return }
         let point = convert(event.locationInWindow, from: nil)
         let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
         guard mapper.imageFrame.width > 0, mapper.imageFrame.height > 0 else { return }
@@ -212,44 +203,19 @@ private final class CropCanvasView: NSView {
         let dx = (point.x - startPoint.x) * scaleX
         let dy = (point.y - startPoint.y) * scaleY
 
-        switch action {
-        case .move:
-            job.cropRect = CropRect(
-                x: startRect.x + dx,
-                y: startRect.y + dy,
-                width: startRect.width,
-                height: startRect.height
-            ).clamped(to: job.pixelSize)
-        case .resize(let anchor):
-            job.cropRect = anchor.resized(rect: startRect, dx: dx, dy: dy).clamped(to: job.pixelSize)
-        }
+        job.cropRect = CropInteraction.updatedCropRect(
+            action: action,
+            startRect: startRect,
+            dx: dx,
+            dy: dy,
+            imageSize: job.pixelSize
+        )
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
         action = nil
         startRect = nil
-    }
-
-    private func dragAction(at point: CGPoint) -> CropDragAction? {
-        guard let job else { return nil }
-        let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
-        let cropFrame = mapper.viewRect(from: job.cropRect)
-        let hitSize = 24.0
-
-        if point.distance(to: CGPoint(x: cropFrame.minX, y: cropFrame.minY)) <= hitSize {
-            return .resize(.bottomRight)
-        }
-        if point.distance(to: CGPoint(x: cropFrame.maxX, y: cropFrame.minY)) <= hitSize {
-            return .resize(.bottomLeft)
-        }
-        if point.distance(to: CGPoint(x: cropFrame.minX, y: cropFrame.maxY)) <= hitSize {
-            return .resize(.topRight)
-        }
-        if point.distance(to: CGPoint(x: cropFrame.maxX, y: cropFrame.maxY)) <= hitSize {
-            return .resize(.topLeft)
-        }
-        return cropFrame.contains(point) ? .move : nil
     }
 
     private func cropHandlePoints(_ cropFrame: CGRect) -> [CGPoint] {
@@ -269,86 +235,5 @@ private final class CropCanvasView: NSView {
         NSColor.white.setStroke()
         handle.lineWidth = 1
         handle.stroke()
-    }
-
-    private func drawPreviewImage(_ image: NSImage, in imageFrame: CGRect, verticallyFlipped: Bool) {
-        guard verticallyFlipped else {
-            image.draw(in: imageFrame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            return
-        }
-
-        NSGraphicsContext.saveGraphicsState()
-        let transform = NSAffineTransform()
-        transform.translateX(by: 0, yBy: imageFrame.minY + imageFrame.maxY)
-        transform.scaleX(by: 1, yBy: -1)
-        transform.concat()
-        image.draw(in: imageFrame, from: .zero, operation: .sourceOver, fraction: 1)
-        NSGraphicsContext.restoreGraphicsState()
-    }
-}
-
-struct CropBox: View {
-    let rect: CGRect
-
-    var body: some View {
-        Rectangle()
-            .fill(Color.accentColor.opacity(0.06))
-            .overlay {
-                Rectangle()
-                    .stroke(Color.accentColor, lineWidth: 2)
-            }
-            .frame(width: rect.width, height: rect.height)
-            .position(x: rect.midX, y: rect.midY)
-            .contentShape(Rectangle())
-    }
-}
-
-struct ResizeHandle: View {
-    let position: CGPoint
-
-    var body: some View {
-        Rectangle()
-            .fill(Color.accentColor.opacity(0.001))
-            .frame(width: 34, height: 34)
-            .overlay {
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 12, height: 12)
-                    .overlay(Circle().stroke(Color.white, lineWidth: 1))
-            }
-            .position(position)
-            .contentShape(Rectangle())
-    }
-}
-
-struct CropMask: Shape {
-    let imageFrame: CGRect
-    let cropFrame: CGRect
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.addRect(imageFrame)
-        path.addRect(cropFrame)
-        return path
-    }
-}
-
-enum ResizeAnchor {
-    case topLeft
-    case topRight
-    case bottomLeft
-    case bottomRight
-
-    func resized(rect: CropRect, dx: Double, dy: Double) -> CropRect {
-        switch self {
-        case .topLeft:
-            return CropRect(x: rect.x, y: rect.y, width: rect.width + dx, height: rect.height + dy)
-        case .topRight:
-            return CropRect(x: rect.x + dx, y: rect.y, width: rect.width - dx, height: rect.height + dy)
-        case .bottomLeft:
-            return CropRect(x: rect.x, y: rect.y + dy, width: rect.width + dx, height: rect.height - dy)
-        case .bottomRight:
-            return CropRect(x: rect.x + dx, y: rect.y + dy, width: rect.width - dx, height: rect.height - dy)
-        }
     }
 }

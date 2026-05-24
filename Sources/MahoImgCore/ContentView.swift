@@ -38,16 +38,11 @@ public struct ContentView: View {
     }
 
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
-        for provider in providers {
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                let data = item as? Data
-                let url = data.flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
-                if let url {
-                    Task { @MainActor in
-                        state.addURLs([url])
-                    }
-                }
-            }
+        guard FileDropHandler.accepts(providers: providers) else { return false }
+        Task { @MainActor in
+            let urls = await FileDropHandler.loadURLs(from: providers)
+            guard !urls.isEmpty else { return }
+            state.addURLs(urls)
         }
         return true
     }
@@ -80,7 +75,7 @@ struct JobListView: View {
                 }
                 .controlSize(.regular)
                 .frame(width: 28, height: 28)
-                .disabled(state.selectedJobID == nil)
+                .disabled(!state.hasSelection)
                 .help("選択画像を削除")
 
                 Button {
@@ -96,7 +91,7 @@ struct JobListView: View {
             }
             .padding(12)
 
-            List(selection: $state.selectedJobID) {
+            List(selection: $state.selectedJobIDs) {
                 ForEach(state.jobs) { job in
                     JobRow(job: job)
                         .tag(job.id)
@@ -119,15 +114,7 @@ struct JobListView: View {
     }
 
     private func openFiles() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = ImageProcessor.selectableContentTypes
-        panel.prompt = "追加"
-        if panel.runModal() == .OK {
-            state.addURLs(panel.urls)
-        }
+        state.addURLs(PlatformServices.openFiles())
     }
 }
 
@@ -208,14 +195,27 @@ struct BottomBar: View {
             Text(state.progressText)
                 .foregroundStyle(.secondary)
             Spacer()
+            if state.isProcessing {
+                Button("キャンセル") {
+                    state.cancelProcessing()
+                }
+            }
             Button {
                 state.processSelected()
             } label: {
-                Label("個別変換", systemImage: "play.fill")
+                Label(selectionButtonTitle, systemImage: "play.fill")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(state.selectedJob == nil || state.isProcessing)
+            .disabled(!state.hasSelection || state.isProcessing)
         }
+    }
+
+    private var selectionButtonTitle: String {
+        let count = state.selectedJobs.count
+        if count > 1 {
+            return "選択した\(count)件を変換"
+        }
+        return "選択項目を変換"
     }
 }
 
