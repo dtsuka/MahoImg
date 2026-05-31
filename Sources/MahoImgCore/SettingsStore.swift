@@ -1,5 +1,17 @@
 import Foundation
 
+struct SettingsStorage {
+    let load: () -> ConversionSettings
+    let save: (ConversionSettings) -> Void
+
+    static func ephemeral(initialSettings: ConversionSettings = ConversionSettings()) -> SettingsStorage {
+        SettingsStorage(
+            load: { initialSettings },
+            save: { _ in }
+        )
+    }
+}
+
 enum SettingsStore {
     private static let key = "MahoImg.ConversionSettings"
 

@@ -1,7 +1,9 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsPane: View {
     @EnvironmentObject private var state: AppState
+    @State private var isOutputFolderDropTargeted = false
 
     var body: some View {
         Form {
@@ -37,10 +39,8 @@ struct SettingsPane: View {
                 } label: {
                     Label("保存先を選択", systemImage: "folder")
                 }
-                Text(state.settings.chosenFolderPath.isEmpty ? "未選択" : state.settings.chosenFolderPath)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                outputFolderPathLabel
+                    .onDrop(of: [.folder], isTargeted: $isOutputFolderDropTargeted, perform: handleOutputFolderDrop(providers:))
             }
 
             Section("リサイズ") {
@@ -100,6 +100,42 @@ struct SettingsPane: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var outputFolderPathLabel: some View {
+        Text(state.settings.chosenFolderPath.isEmpty ? "未選択" : state.settings.chosenFolderPath)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                isOutputFolderDropTargeted ? Color.accentColor.opacity(0.12) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 6)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(
+                        isOutputFolderDropTargeted ? Color.accentColor : Color.clear,
+                        style: StrokeStyle(lineWidth: 1, dash: [4])
+                    )
+            }
+            .help("保存先フォルダをドロップ")
+    }
+
+    private func handleOutputFolderDrop(providers: [NSItemProvider]) -> Bool {
+        guard FileDropHandler.accepts(providers: providers, typeIdentifiers: FileDropHandler.folderDropTypeIdentifiers) else {
+            return false
+        }
+        Task { @MainActor in
+            let urls = await FileDropHandler.loadURLs(
+                from: providers,
+                typeIdentifiers: FileDropHandler.folderDropTypeIdentifiers
+            )
+            _ = urls.first(where: state.setOutputFolder)
+        }
+        return true
     }
 
     private var qualityBinding: Binding<Double> {

@@ -12,6 +12,7 @@ enum PlatformServices {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "選択"
         guard panel.runModal() == .OK, let url = panel.url else { return nil }

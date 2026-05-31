@@ -2,16 +2,26 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum FileDropHandler {
-    static func accepts(providers: [NSItemProvider]) -> Bool {
-        providers.contains { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+    static let fileURLTypeIdentifiers = [UTType.fileURL.identifier]
+    static let folderDropTypeIdentifiers = [UTType.fileURL.identifier, UTType.folder.identifier]
+
+    static func accepts(
+        providers: [NSItemProvider],
+        typeIdentifiers: [String] = fileURLTypeIdentifiers
+    ) -> Bool {
+        providers.contains { provider in
+            typeIdentifiers.contains { provider.hasItemConformingToTypeIdentifier($0) }
+        }
     }
 
     @MainActor
-    static func loadURLs(from providers: [NSItemProvider]) async -> [URL] {
+    static func loadURLs(
+        from providers: [NSItemProvider],
+        typeIdentifiers: [String] = fileURLTypeIdentifiers
+    ) async -> [URL] {
         var urls: [URL] = []
         for provider in providers {
-            guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else { continue }
-            if let url = await loadURL(from: provider) {
+            if let url = await loadURL(from: provider, typeIdentifiers: typeIdentifiers) {
                 urls.append(url)
             }
         }
@@ -19,9 +29,19 @@ enum FileDropHandler {
     }
 
     @MainActor
-    private static func loadURL(from provider: NSItemProvider) async -> URL? {
+    private static func loadURL(from provider: NSItemProvider, typeIdentifiers: [String]) async -> URL? {
+        for typeIdentifier in typeIdentifiers where provider.hasItemConformingToTypeIdentifier(typeIdentifier) {
+            if let url = await loadURL(from: provider, typeIdentifier: typeIdentifier) {
+                return url
+            }
+        }
+        return nil
+    }
+
+    @MainActor
+    private static func loadURL(from provider: NSItemProvider, typeIdentifier: String) async -> URL? {
         await withCheckedContinuation { continuation in
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, _ in
                 continuation.resume(returning: resolveURL(from: item))
             }
         }

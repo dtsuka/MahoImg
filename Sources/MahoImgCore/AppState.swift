@@ -5,16 +5,27 @@ import PDFKit
 public final class AppState: ObservableObject {
     @Published var jobs: [ImageJob] = []
     @Published var selectedJobIDs: Set<UUID> = []
-    @Published var settings: ConversionSettings = SettingsStore.load() {
-        didSet { SettingsStore.save(settings) }
+    @Published var settings: ConversionSettings {
+        didSet { settingsStorage.save(settings) }
     }
     @Published var isProcessing = false
     @Published var progressText = "待機中"
+    private let settingsStorage: SettingsStorage
     private var didShowMissingMagickGuide = false
     private var processingTask: Task<Void, Never>?
     private var runningProcess: Process?
 
-    public init() {}
+    public convenience init() {
+        self.init(settingsStorage: SettingsStorage(
+            load: SettingsStore.load,
+            save: SettingsStore.save
+        ))
+    }
+
+    init(settingsStorage: SettingsStorage) {
+        self.settingsStorage = settingsStorage
+        settings = settingsStorage.load()
+    }
 
     var selectedJob: ImageJob? {
         if case .single(let job) = selectionMode {
@@ -104,8 +115,15 @@ public final class AppState: ObservableObject {
 
     func chooseOutputFolder() {
         guard let path = PlatformServices.chooseOutputFolder() else { return }
-        settings.chosenFolderPath = path
+        setOutputFolder(URL(fileURLWithPath: path, isDirectory: true))
+    }
+
+    @discardableResult
+    func setOutputFolder(_ url: URL) -> Bool {
+        guard let folder = OutputFolder.existingDirectory(at: url) else { return false }
+        settings.chosenFolderPath = folder.path
         settings.saveLocation = .chosenFolder
+        return true
     }
 
     func processAll() {
@@ -198,10 +216,8 @@ public final class AppState: ObservableObject {
     }
 
     private func resolvedJobs(from url: URL) -> [ImageJob] {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return [] }
-        if isDirectory.boolValue {
-            guard let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else {
+        if let directory = OutputFolder.existingDirectory(at: url) {
+            guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey]) else {
                 return []
             }
             var resolved: [ImageJob] = []

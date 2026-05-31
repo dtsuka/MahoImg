@@ -99,9 +99,10 @@ struct ImageProcessor {
         case .original:
             folder = inputURL.deletingLastPathComponent()
         case .chosenFolder:
-            guard !settings.chosenFolderPath.isEmpty else { throw ImageProcessorError.invalidOutputFolder }
-            folder = URL(fileURLWithPath: settings.chosenFolderPath, isDirectory: true)
-            guard FileManager.default.fileExists(atPath: folder.path) else { throw ImageProcessorError.invalidOutputFolder }
+            guard let outputFolder = OutputFolder.existingDirectory(from: settings.chosenFolderPath) else {
+                throw ImageProcessorError.invalidOutputFolder
+            }
+            folder = outputFolder
         }
 
         let base = inputURL.deletingPathExtension().lastPathComponent
