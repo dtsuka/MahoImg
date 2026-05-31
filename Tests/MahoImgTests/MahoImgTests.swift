@@ -101,7 +101,7 @@ final class AppStateTests: XCTestCase {
         try writeTestPNG(to: firstURL)
         try writeTestPNG(to: secondURL)
 
-        let state = AppState()
+        let state = makeState()
         state.addURLs([firstURL])
         let firstSelectedID = try XCTUnwrap(state.selectedJobIDs.first)
 
@@ -122,7 +122,7 @@ final class AppStateTests: XCTestCase {
         try writeTestPNG(to: firstURL)
         try writeTestPNG(to: secondURL)
 
-        let state = AppState()
+        let state = makeState()
         state.addURLs([firstURL])
         state.selectJobIDs(state.addURLs([secondURL]))
 
@@ -143,7 +143,7 @@ final class AppStateTests: XCTestCase {
         try writeTestPNG(to: firstURL)
         try writeTestPNG(to: secondURL)
 
-        let state = AppState()
+        let state = makeState()
         state.selectJobIDs(state.addURLs([firstURL, secondURL]))
 
         XCTAssertEqual(state.selectedJobs.map(\.inputURL), [firstURL, secondURL])
@@ -161,7 +161,7 @@ final class AppStateTests: XCTestCase {
         try writeTestPNG(to: secondURL)
         try writeTestPNG(to: thirdURL)
 
-        let state = AppState()
+        let state = makeState()
         state.addURLs([firstURL, secondURL, thirdURL])
         let secondID = try XCTUnwrap(state.jobs.first { $0.inputURL == secondURL }?.id)
         let thirdID = try XCTUnwrap(state.jobs.first { $0.inputURL == thirdURL }?.id)
@@ -187,7 +187,7 @@ final class AppStateTests: XCTestCase {
         try writeTestPNG(to: firstURL)
         try writeTestPNG(to: secondURL)
 
-        let state = AppState()
+        let state = makeState()
         state.addURLs([firstURL, secondURL])
         let firstJob = try XCTUnwrap(state.jobs.first { $0.inputURL == firstURL })
         let secondJob = try XCTUnwrap(state.jobs.first { $0.inputURL == secondURL })
@@ -213,7 +213,7 @@ final class AppStateTests: XCTestCase {
         try writeTestPNG(to: secondURL)
         try writeTestPNG(to: thirdURL)
 
-        let state = AppState()
+        let state = makeState()
         state.addURLs([firstURL, secondURL, thirdURL])
         let firstID = try XCTUnwrap(state.jobs.first { $0.inputURL == firstURL }?.id)
         let thirdID = try XCTUnwrap(state.jobs.first { $0.inputURL == thirdURL }?.id)
@@ -233,10 +233,42 @@ final class AppStateTests: XCTestCase {
         let pngURL = directory.appendingPathComponent("photo.png")
         try writeTestPNG(to: pngURL)
 
-        let state = AppState()
+        let state = makeState()
         state.addURLs([pngURL])
         let job = try XCTUnwrap(state.jobs.first)
         XCTAssertEqual(job.source, .raster(pngURL))
+    }
+
+    func testSetOutputFolderSelectsExistingDirectory() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let state = makeState()
+
+        XCTAssertTrue(state.setOutputFolder(directory))
+        XCTAssertEqual(state.settings.chosenFolderPath, directory.path)
+        XCTAssertEqual(state.settings.saveLocation, .chosenFolder)
+    }
+
+    func testSetOutputFolderIgnoresFiles() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fileURL = directory.appendingPathComponent("not-folder.txt")
+        try Data().write(to: fileURL)
+        let state = makeState()
+        state.settings.chosenFolderPath = "/tmp/existing-output"
+        state.settings.saveLocation = .original
+
+        XCTAssertFalse(state.setOutputFolder(fileURL))
+        XCTAssertEqual(state.settings.chosenFolderPath, "/tmp/existing-output")
+        XCTAssertEqual(state.settings.saveLocation, .original)
+    }
+
+    private func makeState() -> AppState {
+        AppState(settingsStorage: .ephemeral())
     }
 
     private func writeTestPNG(to url: URL) throws {
@@ -435,6 +467,28 @@ final class ImageProcessorTests: XCTestCase {
         }
 
         XCTAssertEqual(output.path, "/tmp/th_photo_small_2.webp")
+    }
+
+    func testOutputURLRejectsChosenFilePath() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fileURL = directory.appendingPathComponent("not-folder")
+        try Data().write(to: fileURL)
+
+        var settings = ConversionSettings()
+        settings.saveLocation = .chosenFolder
+        settings.chosenFolderPath = fileURL.path
+
+        XCTAssertThrowsError(
+            try ImageProcessor.outputURL(for: URL(fileURLWithPath: "/tmp/photo.jpg"), settings: settings)
+        ) { error in
+            guard let processorError = error as? ImageProcessorError,
+                  case .invalidOutputFolder = processorError else {
+                return XCTFail("Expected invalid output folder, got \(error)")
+            }
+        }
     }
 
     func testOutputURLAddsPageSuffixForMultiPageDocuments() throws {
