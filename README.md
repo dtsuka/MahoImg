@@ -78,6 +78,34 @@ MahoImg は `/opt/homebrew/bin/magick`、`/usr/local/bin/magick`、PATH 上の `
 
 MahoImg looks for ImageMagick at `/opt/homebrew/bin/magick`, `/usr/local/bin/magick`, then `magick` on PATH. If Homebrew is not installed, install [Homebrew](https://brew.sh/) first.
 
+## 初回起動時の警告 / First Launch Warning
+
+GitHub Release からダウンロードしたアプリを初めて開くと、macOS が「Apple は、MahoImg.app にマルウェアが含まれていないことを検証できませんでした」という警告を表示する場合があります。
+
+If you downloaded the app from GitHub Releases, macOS may show a warning saying Apple could not verify that `MahoImg.app` is free of malware.
+
+開けない場合は、次の手順で許可してください。
+
+If the app cannot be opened, allow it with these steps:
+
+1. `MahoImg.app` を一度開こうとして、警告を表示します。
+2. `キャンセル` を押します。
+3. macOS の `システム設定` を開きます。
+4. `プライバシーとセキュリティ` を開きます。
+5. 下部に表示される `MahoImg.app` の警告で、`このまま開く` を押します。
+6. もう一度確認が出たら、`開く` を押します。
+
+1. Try to open `MahoImg.app` once so macOS shows the warning.
+2. Press `Cancel`.
+3. Open macOS `System Settings`.
+4. Open `Privacy & Security`.
+5. In the warning for `MahoImg.app` near the bottom, press `Open Anyway`.
+6. If macOS asks again, press `Open`.
+
+これは未 notarize の個人配布アプリで表示される macOS の保護機能です。
+
+This is a macOS protection feature shown for personally distributed apps that have not been notarized.
+
 ## 注意点 / Notes
 
 - WebP 書き出しには ImageMagick が必要です。
