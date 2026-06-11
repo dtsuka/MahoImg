@@ -42,6 +42,14 @@ public final class AppState: ObservableObject {
         !selectedJobIDs.isEmpty
     }
 
+    public var canProcessAll: Bool {
+        !jobs.isEmpty && !isProcessing
+    }
+
+    public var canProcessSelected: Bool {
+        hasSelection && !isProcessing
+    }
+
     var selectionMode: SelectionMode {
         let selected = selectedJobs
         switch selected.count {
@@ -126,11 +134,11 @@ public final class AppState: ObservableObject {
         return true
     }
 
-    func processAll() {
+    public func processAll() {
         process(jobs, completionText: "完了")
     }
 
-    func processSelected() {
+    public func processSelected() {
         process(selectedJobs, completionText: "選択項目の変換完了")
     }
 

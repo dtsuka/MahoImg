@@ -20,7 +20,7 @@ enum OutputFormat: String, CaseIterable, Codable, Identifiable {
 enum ResizeMode: String, CaseIterable, Codable, Identifiable {
     case none = "しない"
     case fit = "内接"
-    case fillCrop = "塗り足しクロップ"
+    case fillCrop = "外接"
     case width = "幅指定"
     case height = "高さ指定"
     case exact = "幅高さ指定"
@@ -34,7 +34,7 @@ enum ResizeMode: String, CaseIterable, Codable, Identifiable {
         case .fit:
             "指定した幅と高さの内側に、縦横比を維持して画像全体を収めます。"
         case .fillCrop:
-            "指定サイズを埋めるまで拡大縮小し、はみ出した部分を中央で切り落とします。"
+            "指定サイズを覆うまで縦横比を維持して拡大縮小し、はみ出した部分を中央で切り落とします。"
         case .width:
             "幅を指定値に合わせ、高さは縦横比から自動計算します。"
         case .height:
@@ -49,6 +49,10 @@ enum ResizeMode: String, CaseIterable, Codable, Identifiable {
         let value = try container.decode(String.self)
         if value == "フィット" {
             self = .fit
+            return
+        }
+        if value == "塗り足しクロップ" {
+            self = .fillCrop
             return
         }
         guard let mode = ResizeMode(rawValue: value) else {

@@ -98,17 +98,24 @@ struct JobListView: View {
                 }
             }
             .listStyle(.sidebar)
+            .onDeleteCommand {
+                state.removeSelected()
+            }
 
             Divider()
 
             Button {
                 state.processAll()
             } label: {
-                Label("一括変換", systemImage: "play.fill")
-                    .frame(maxWidth: .infinity)
+                HStack {
+                    Label("一括変換", systemImage: "play.fill")
+                    Spacer()
+                    ShortcutText("⇧⌘↩")
+                }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(state.jobs.isEmpty || state.isProcessing)
+            .disabled(!state.canProcessAll)
             .padding(12)
         }
     }
@@ -203,10 +210,13 @@ struct BottomBar: View {
             Button {
                 state.processSelected()
             } label: {
-                Label(selectionButtonTitle, systemImage: "play.fill")
+                HStack(spacing: 8) {
+                    Label(selectionButtonTitle, systemImage: "play.fill")
+                    ShortcutText("⌘↩")
+                }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!state.hasSelection || state.isProcessing)
+            .disabled(!state.canProcessSelected)
         }
     }
 
@@ -216,6 +226,21 @@ struct BottomBar: View {
             return "選択した\(count)件を変換"
         }
         return "選択項目を変換"
+    }
+}
+
+private struct ShortcutText: View {
+    let value: String
+
+    init(_ value: String) {
+        self.value = value
+    }
+
+    var body: some View {
+        Text(value)
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
     }
 }
 

@@ -27,6 +27,21 @@ struct MahoImgApp: App {
         }
         .windowStyle(.titleBar)
         .handlesExternalEvents(matching: [])
+        .commands {
+            CommandMenu("変換") {
+                Button("選択項目を変換") {
+                    state.processSelected()
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!state.canProcessSelected)
+
+                Button("一括変換") {
+                    state.processAll()
+                }
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .disabled(!state.canProcessAll)
+            }
+        }
     }
 }
 

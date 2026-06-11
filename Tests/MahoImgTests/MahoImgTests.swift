@@ -5,6 +5,15 @@ import PDFKit
 @testable import MahoImgCore
 import XCTest
 
+final class ResizeModeTests: XCTestCase {
+    func testDecodesLegacyFillCropNameAsCoverMode() throws {
+        let mode = try JSONDecoder().decode(ResizeMode.self, from: Data(#""塗り足しクロップ""#.utf8))
+
+        XCTAssertEqual(mode, .fillCrop)
+        XCTAssertEqual(mode.rawValue, "外接")
+    }
+}
+
 final class CropRectTests: XCTestCase {
     func testClampedNeverExceedsImageWhenImageSmallerThanMinimum() {
         let tiny = CGSize(width: 10, height: 8)
@@ -542,6 +551,40 @@ final class ImageProcessorTests: XCTestCase {
             "-quality",
             "70",
             "/tmp/out.webp"
+        ])
+    }
+
+    func testBuildsFillCropArgumentsForCoverResize() {
+        var settings = ConversionSettings()
+        settings.outputFormat = .png
+        settings.resizeMode = .fillCrop
+        settings.targetWidth = 300
+        settings.targetHeight = 200
+
+        let args = ImageProcessor.arguments(
+            inputURL: URL(fileURLWithPath: "/tmp/in.jpg"),
+            outputURL: URL(fileURLWithPath: "/tmp/out.png"),
+            settings: settings,
+            cropRect: CropRect(x: 0, y: 0, width: 1200, height: 1200),
+            imageSize: CGSize(width: 1200, height: 1200),
+            source: .raster(URL(fileURLWithPath: "/tmp/in.jpg"))
+        )
+
+        XCTAssertEqual(args, [
+            "/tmp/in.jpg",
+            "-auto-orient",
+            "-crop",
+            "1200x1200+0+0",
+            "+repage",
+            "-filter",
+            "Lanczos",
+            "-resize",
+            "300x200^",
+            "-gravity",
+            "center",
+            "-extent",
+            "300x200",
+            "/tmp/out.png"
         ])
     }
 
