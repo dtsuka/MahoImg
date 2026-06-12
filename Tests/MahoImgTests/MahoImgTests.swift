@@ -14,6 +14,22 @@ final class ResizeModeTests: XCTestCase {
     }
 }
 
+final class ConversionSettingsTests: XCTestCase {
+    func testDecodingLegacySettingsUsesGrayPreviewBackground() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "outputFormat": "WebP",
+            "quality": 82,
+            "resizeMode": "内接",
+            "targetWidth": 300,
+            "targetHeight": 300
+        ])
+
+        let settings = try JSONDecoder().decode(ConversionSettings.self, from: data)
+
+        XCTAssertEqual(settings.previewBackground, .gray)
+    }
+}
+
 final class CropRectTests: XCTestCase {
     func testClampedNeverExceedsImageWhenImageSmallerThanMinimum() {
         let tiny = CGSize(width: 10, height: 8)

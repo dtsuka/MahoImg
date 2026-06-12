@@ -3,10 +3,11 @@ import SwiftUI
 
 struct PreviewPane: View {
     @EnvironmentObject private var state: AppState
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
-            Color(nsColor: .textBackgroundColor)
+            PreviewBackgroundView(background: state.settings.previewBackground)
             switch state.selectionMode {
             case .multiple(let jobs):
                 MultiSelectionPreview(jobs: jobs)
@@ -21,6 +22,124 @@ struct PreviewPane: View {
                         .foregroundStyle(.secondary)
                     Text("画像ファイルまたはフォルダをこのウィンドウへドロップ")
                         .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            PreviewBackgroundPicker(selection: $state.settings.previewBackground)
+                .padding(12)
+        }
+        .environment(\.colorScheme, previewColorScheme)
+    }
+
+    private var previewColorScheme: ColorScheme {
+        switch state.settings.previewBackground {
+        case .black:
+            .dark
+        case .white, .checkerboard:
+            .light
+        case .gray:
+            colorScheme
+        }
+    }
+}
+
+private struct PreviewBackgroundPicker: View {
+    @Binding var selection: PreviewBackground
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(PreviewBackground.allCases) { background in
+                Button {
+                    selection = background
+                } label: {
+                    PreviewBackgroundSwatch(background: background)
+                        .frame(width: 22, height: 22)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(
+                                    selection == background ? Color.accentColor : Color.primary.opacity(0.25),
+                                    lineWidth: selection == background ? 2 : 1
+                                )
+                        }
+                        .padding(2)
+                }
+                .buttonStyle(.plain)
+                .help(background.rawValue)
+                .accessibilityLabel("プレビュー背景: \(background.rawValue)")
+                .accessibilityAddTraits(selection == background ? .isSelected : [])
+            }
+        }
+        .padding(6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct PreviewBackgroundSwatch: View {
+    let background: PreviewBackground
+
+    var body: some View {
+        switch background {
+        case .gray:
+            PreviewBackgroundColors.gray
+        case .white:
+            Color.white
+        case .black:
+            Color.black
+        case .checkerboard:
+            CheckerboardBackground(squareSize: 6)
+        }
+    }
+}
+
+private struct PreviewBackgroundView: View {
+    let background: PreviewBackground
+
+    var body: some View {
+        switch background {
+        case .gray:
+            PreviewBackgroundColors.gray
+        case .white:
+            Color.white
+        case .black:
+            Color.black
+        case .checkerboard:
+            CheckerboardBackground()
+        }
+    }
+}
+
+private enum PreviewBackgroundColors {
+    static let gray = Color(
+        red: 72.0 / 255.0,
+        green: 73.0 / 255.0,
+        blue: 73.0 / 255.0
+    )
+}
+
+private struct CheckerboardBackground: View {
+    let squareSize: CGFloat
+
+    init(squareSize: CGFloat = 16) {
+        self.squareSize = squareSize
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+
+            let columns = Int(ceil(size.width / squareSize))
+            let rows = Int(ceil(size.height / squareSize))
+            for row in 0..<rows {
+                for column in 0..<columns where (row + column).isMultiple(of: 2) {
+                    let rect = CGRect(
+                        x: CGFloat(column) * squareSize,
+                        y: CGFloat(row) * squareSize,
+                        width: squareSize,
+                        height: squareSize
+                    )
+                    context.fill(Path(rect), with: .color(Color(nsColor: .lightGray).opacity(0.45)))
                 }
             }
         }
@@ -74,7 +193,6 @@ private struct SelectedJobPreviewTile: View {
         VStack(alignment: .leading, spacing: 6) {
             PreviewCanvas(job: job, mode: .thumbnail)
                 .aspectRatio(1, contentMode: .fit)
-                .background(Color(nsColor: .windowBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .overlay {
                     RoundedRectangle(cornerRadius: 6)
