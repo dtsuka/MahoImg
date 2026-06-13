@@ -14,7 +14,7 @@ struct PreviewPane: View {
                     .padding(20)
             case .single(let job):
                 CropPreview(job: job)
-                    .padding(20)
+                    .id(job.id)
             case .none:
                 VStack(spacing: 12) {
                     Image(systemName: "photo.on.rectangle.angled")
@@ -210,9 +210,128 @@ private struct SelectedJobPreviewTile: View {
 
 struct CropPreview: View {
     @ObservedObject var job: ImageJob
+    @Environment(\.displayScale) private var screenScale
+    @State private var zoomScale: CGFloat = 1
+    @State private var panOffset: CGSize = .zero
 
     var body: some View {
-        PreviewCanvas(job: job, mode: .crop)
+        GeometryReader { geometry in
+            PreviewCanvas(
+                job: job,
+                mode: .crop,
+                zoomScale: $zoomScale,
+                panOffset: $panOffset
+            )
+            .clipped()
+            .help("ピンチまたは⌘スクロールでズーム・2本指スクロールまたは⌥ドラッグでパン・ダブルクリックでリセット")
+            .overlay(alignment: .bottomTrailing) {
+                PreviewZoomControls(
+                    zoomScale: $zoomScale,
+                    panOffset: $panOffset,
+                    actualPixelScale: actualPixelScale(in: geometry.size),
+                    actualSizeZoomScale: actualSizeZoomScale(in: geometry.size)
+                )
+                .padding(12)
+            }
+        }
+    }
+
+    private func actualPixelScale(in viewportSize: CGSize) -> CGFloat {
+        previewMapper(viewportSize: viewportSize).displayScale * screenScale
+    }
+
+    private func actualSizeZoomScale(in viewportSize: CGSize) -> CGFloat {
+        previewMapper(viewportSize: viewportSize).zoomScale(
+            forActualPixelScale: 1,
+            screenScale: screenScale
+        )
+    }
+
+    private func previewMapper(viewportSize: CGSize) -> PreviewMapper {
+        PreviewMapper(
+            imageSize: job.pixelSize,
+            viewportSize: viewportSize,
+            zoomScale: zoomScale,
+            contentInset: PreviewMetrics.cropHandleRadius
+        )
+    }
+}
+
+private struct PreviewZoomControls: View {
+    @Binding var zoomScale: CGFloat
+    @Binding var panOffset: CGSize
+    let actualPixelScale: CGFloat
+    let actualSizeZoomScale: CGFloat
+
+    var body: some View {
+        HStack(spacing: 6) {
+            HStack(spacing: 4) {
+                Button {
+                    setZoom(zoomScale / 1.25)
+                } label: {
+                    Image(systemName: "minus")
+                }
+                .disabled(zoomScale <= PreviewCanvasView.minimumZoomScale)
+                .help("縮小")
+
+                Button {
+                    reset()
+                } label: {
+                    Text("\(Int((actualPixelScale * 100).rounded()))%")
+                        .monospacedDigit()
+                        .frame(minWidth: 44)
+                }
+                .help("全体表示に戻す")
+
+                Button {
+                    setZoom(zoomScale * 1.25)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .disabled(zoomScale >= PreviewCanvasView.maximumZoomScale)
+                .help("拡大")
+            }
+            .padding(6)
+            .frame(height: PreviewMetrics.zoomControlHeight)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+
+            Button {
+                showActualSize()
+            } label: {
+                Image(systemName: "1.magnifyingglass")
+                    .frame(width: 20, height: 20)
+            }
+            .help("実寸表示（100%）")
+            .accessibilityLabel("実寸表示")
+            .padding(6)
+            .frame(height: PreviewMetrics.zoomControlHeight)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+    }
+
+    private func setZoom(_ value: CGFloat) {
+        zoomScale = min(
+            max(value, PreviewCanvasView.minimumZoomScale),
+            PreviewCanvasView.maximumZoomScale
+        )
+        if zoomScale <= 1 {
+            panOffset = .zero
+        }
+    }
+
+    private func reset() {
+        zoomScale = 1
+        panOffset = .zero
+    }
+
+    private func showActualSize() {
+        zoomScale = min(
+            max(actualSizeZoomScale, PreviewCanvasView.minimumZoomScale),
+            PreviewCanvasView.maximumZoomScale
+        )
+        panOffset = .zero
     }
 }
 
@@ -221,9 +340,28 @@ private enum PreviewCanvasMode {
     case crop
 }
 
+private enum PreviewMetrics {
+    static let cropHandleRadius: CGFloat = 6
+    static let zoomControlHeight: CGFloat = 34
+}
+
 private struct PreviewCanvas: NSViewRepresentable {
     @ObservedObject var job: ImageJob
     let mode: PreviewCanvasMode
+    @Binding var zoomScale: CGFloat
+    @Binding var panOffset: CGSize
+
+    init(
+        job: ImageJob,
+        mode: PreviewCanvasMode,
+        zoomScale: Binding<CGFloat> = .constant(1),
+        panOffset: Binding<CGSize> = .constant(.zero)
+    ) {
+        self.job = job
+        self.mode = mode
+        _zoomScale = zoomScale
+        _panOffset = panOffset
+    }
 
     func makeNSView(context: Context) -> PreviewCanvasView {
         PreviewCanvasView(mode: mode)
@@ -232,18 +370,32 @@ private struct PreviewCanvas: NSViewRepresentable {
     func updateNSView(_ nsView: PreviewCanvasView, context: Context) {
         nsView.job = job
         nsView.image = PreviewImageCache.image(for: job)
+        nsView.zoomScale = zoomScale
+        nsView.panOffset = panOffset
+        nsView.onViewportChange = { zoomScale, panOffset in
+            self.zoomScale = zoomScale
+            self.panOffset = panOffset
+        }
         nsView.needsDisplay = true
     }
 }
 
 @MainActor
 private final class PreviewCanvasView: NSView {
+    static let minimumZoomScale: CGFloat = 0.1
+    static let maximumZoomScale: CGFloat = 64
+
     let mode: PreviewCanvasMode
     var job: ImageJob?
     var image: NSImage?
+    var zoomScale: CGFloat = 1
+    var panOffset: CGSize = .zero
+    var onViewportChange: ((CGFloat, CGSize) -> Void)?
     private var action: CropDragAction?
+    private var isPanning = false
     private var startPoint: CGPoint = .zero
     private var startRect: CropRect?
+    private var startPanOffset: CGSize = .zero
 
     init(mode: PreviewCanvasMode) {
         self.mode = mode
@@ -257,6 +409,8 @@ private final class PreviewCanvasView: NSView {
 
     override var isFlipped: Bool { true }
 
+    override var wantsDefaultClipping: Bool { true }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         mode == .crop
     }
@@ -269,7 +423,11 @@ private final class PreviewCanvasView: NSView {
         super.draw(dirtyRect)
         guard let job, let image else { return }
 
-        let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSBezierPath(rect: bounds).addClip()
+
+        let mapper = previewMapper(for: job)
         let imageFrame = mapper.imageFrame
 
         NSGraphicsContext.current?.imageInterpolation = .high
@@ -304,16 +462,38 @@ private final class PreviewCanvasView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard mode == .crop, let job else { return }
-        let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
+        if event.clickCount == 2 {
+            updateViewport(zoomScale: 1, panOffset: .zero)
+            return
+        }
+
         startPoint = convert(event.locationInWindow, from: nil)
+        if event.modifierFlags.contains(.option), zoomScale > 1 {
+            isPanning = true
+            startPanOffset = panOffset
+            NSCursor.closedHand.push()
+            return
+        }
+
+        let mapper = previewMapper(for: job)
         startRect = job.cropRect
         action = CropInteraction.dragAction(at: startPoint, cropRect: job.cropRect, mapper: mapper)
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard mode == .crop, let job, let startRect, let action else { return }
+        guard mode == .crop, let job else { return }
         let point = convert(event.locationInWindow, from: nil)
-        let mapper = PreviewMapper(imageSize: job.pixelSize, viewportSize: bounds.size)
+        if isPanning {
+            let proposedOffset = CGSize(
+                width: startPanOffset.width + point.x - startPoint.x,
+                height: startPanOffset.height + point.y - startPoint.y
+            )
+            updateViewport(zoomScale: zoomScale, panOffset: proposedOffset)
+            return
+        }
+
+        guard let startRect, let action else { return }
+        let mapper = previewMapper(for: job)
         guard mapper.imageFrame.width > 0, mapper.imageFrame.height > 0 else { return }
 
         let scaleX = job.pixelSize.width / mapper.imageFrame.width
@@ -332,8 +512,68 @@ private final class PreviewCanvasView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isPanning {
+            NSCursor.pop()
+        }
+        isPanning = false
         action = nil
         startRect = nil
+    }
+
+    override func magnify(with event: NSEvent) {
+        guard mode == .crop else { return }
+        updateViewport(
+            zoomScale: zoomScale * (1 + event.magnification),
+            panOffset: panOffset
+        )
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard mode == .crop else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        if event.modifierFlags.contains(.command) {
+            let factor = exp(-event.scrollingDeltaY * 0.02)
+            updateViewport(zoomScale: zoomScale * factor, panOffset: panOffset)
+        } else if zoomScale > 1 {
+            updateViewport(
+                zoomScale: zoomScale,
+                panOffset: CGSize(
+                    width: panOffset.width + event.scrollingDeltaX,
+                    height: panOffset.height + event.scrollingDeltaY
+                )
+            )
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
+
+    private func previewMapper(for job: ImageJob) -> PreviewMapper {
+        PreviewMapper(
+            imageSize: job.pixelSize,
+            viewportSize: bounds.size,
+            zoomScale: zoomScale,
+            panOffset: panOffset,
+            contentInset: mode == .crop ? PreviewMetrics.cropHandleRadius : 0
+        )
+    }
+
+    private func updateViewport(zoomScale proposedScale: CGFloat, panOffset proposedOffset: CGSize) {
+        let scale = min(max(proposedScale, Self.minimumZoomScale), Self.maximumZoomScale)
+        guard let job else { return }
+        let mapper = PreviewMapper(
+            imageSize: job.pixelSize,
+            viewportSize: bounds.size,
+            zoomScale: scale,
+            panOffset: scale == 1 ? .zero : proposedOffset,
+            contentInset: mode == .crop ? PreviewMetrics.cropHandleRadius : 0
+        )
+        zoomScale = scale
+        panOffset = mapper.clampedPanOffset
+        onViewportChange?(zoomScale, panOffset)
+        needsDisplay = true
     }
 
     private func cropHandlePoints(_ cropFrame: CGRect) -> [CGPoint] {
@@ -346,7 +586,8 @@ private final class PreviewCanvasView: NSView {
     }
 
     private func drawHandle(at point: CGPoint) {
-        let rect = CGRect(x: point.x - 6, y: point.y - 6, width: 12, height: 12)
+        let radius = PreviewMetrics.cropHandleRadius
+        let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
         let handle = NSBezierPath(ovalIn: rect)
         NSColor.controlAccentColor.setFill()
         handle.fill()

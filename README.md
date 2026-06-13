@@ -17,6 +17,7 @@ MahoImg is a macOS app for converting images and PDFs in batches. It can export 
 - PSD/PSB は統合済みの静止画として書き出します。
 - 画像を指定サイズに内接・外接させる、幅だけ指定する、高さだけ指定する、強制的に幅高さを合わせる、といったリサイズができます。
 - プレビュー上でトリミング範囲を調整できます。
+- プレビューをズーム・パンし、全体表示や実寸表示へ切り替えられます。
 - 余白と余白色を指定できます。
 - 元ファイルと同じ場所、または選択したフォルダに保存できます。
 - 同名ファイルがある場合は、標準では連番を付けて上書きを避けます。
@@ -28,6 +29,7 @@ MahoImg is a macOS app for converting images and PDFs in batches. It can export 
 - Exports PSD/PSB files as flattened still images.
 - Supports several resize modes: fit inside or cover a size, width only, height only, exact width and height, and more.
 - Lets you adjust the crop area in the preview.
+- Supports zooming and panning the preview, including fit and actual-size views.
 - Can add padding with a selected color.
 - Saves next to the original file or into a selected folder.
 - Avoids overwriting files by adding sequence numbers by default.
