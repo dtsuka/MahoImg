@@ -238,7 +238,8 @@ private struct ShortcutText: View {
 
     var body: some View {
         Text(value)
-            .font(.caption.monospaced())
+            .font(.title3.monospaced().weight(.semibold))
+            .tracking(0.8)
             .foregroundStyle(.secondary)
             .accessibilityHidden(true)
     }

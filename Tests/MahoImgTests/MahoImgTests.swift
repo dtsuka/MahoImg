@@ -14,6 +14,22 @@ final class ResizeModeTests: XCTestCase {
     }
 }
 
+final class ConversionSettingsTests: XCTestCase {
+    func testDecodingLegacySettingsUsesGrayPreviewBackground() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "outputFormat": "WebP",
+            "quality": 82,
+            "resizeMode": "内接",
+            "targetWidth": 300,
+            "targetHeight": 300
+        ])
+
+        let settings = try JSONDecoder().decode(ConversionSettings.self, from: data)
+
+        XCTAssertEqual(settings.previewBackground, .gray)
+    }
+}
+
 final class CropRectTests: XCTestCase {
     func testClampedNeverExceedsImageWhenImageSmallerThanMinimum() {
         let tiny = CGSize(width: 10, height: 8)
@@ -95,6 +111,67 @@ final class PreviewMapperTests: XCTestCase {
         XCTAssertEqual(cropRect.y, 400, accuracy: 0.001)
         XCTAssertEqual(cropRect.width, 400, accuracy: 0.001)
         XCTAssertEqual(cropRect.height, 800, accuracy: 0.001)
+    }
+
+    func testZoomAndPanTransformsImageFrame() {
+        let mapper = PreviewMapper(
+            imageSize: CGSize(width: 1600, height: 800),
+            viewportSize: CGSize(width: 400, height: 400),
+            zoomScale: 2,
+            panOffset: CGSize(width: 50, height: 20)
+        )
+
+        XCTAssertEqual(mapper.imageFrame, CGRect(x: -150, y: 0, width: 800, height: 400))
+        XCTAssertEqual(mapper.displayScale, 0.5, accuracy: 0.001)
+    }
+
+    func testPanOffsetIsClampedToVisibleImageBounds() {
+        let mapper = PreviewMapper(
+            imageSize: CGSize(width: 800, height: 800),
+            viewportSize: CGSize(width: 400, height: 400),
+            zoomScale: 2,
+            panOffset: CGSize(width: 500, height: -500)
+        )
+
+        XCTAssertEqual(mapper.clampedPanOffset.width, 200, accuracy: 0.001)
+        XCTAssertEqual(mapper.clampedPanOffset.height, -200, accuracy: 0.001)
+    }
+
+    func testContentInsetKeepsCropHandlesInsideViewport() {
+        let mapper = PreviewMapper(
+            imageSize: CGSize(width: 1600, height: 800),
+            viewportSize: CGSize(width: 400, height: 400),
+            contentInset: 6
+        )
+
+        XCTAssertEqual(mapper.imageFrame.minX, 6, accuracy: 0.001)
+        XCTAssertEqual(mapper.imageFrame.maxX, 394, accuracy: 0.001)
+        XCTAssertEqual(mapper.imageFrame.minY, 103, accuracy: 0.001)
+        XCTAssertEqual(mapper.imageFrame.maxY, 297, accuracy: 0.001)
+    }
+
+    func testZoomCanShrinkBelowFitScale() {
+        let mapper = PreviewMapper(
+            imageSize: CGSize(width: 1600, height: 800),
+            viewportSize: CGSize(width: 400, height: 400),
+            zoomScale: 0.5
+        )
+
+        XCTAssertEqual(mapper.imageFrame, CGRect(x: 100, y: 150, width: 200, height: 100))
+        XCTAssertEqual(mapper.displayScale, 0.125, accuracy: 0.001)
+    }
+
+    func testCalculatesZoomScaleForActualPixelSize() {
+        let mapper = PreviewMapper(
+            imageSize: CGSize(width: 1600, height: 800),
+            viewportSize: CGSize(width: 400, height: 400)
+        )
+
+        XCTAssertEqual(
+            mapper.zoomScale(forActualPixelScale: 1, screenScale: 2),
+            2,
+            accuracy: 0.001
+        )
     }
 }
 

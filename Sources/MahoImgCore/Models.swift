@@ -76,6 +76,15 @@ enum NameConflictAction: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 }
 
+enum PreviewBackground: String, CaseIterable, Codable, Identifiable {
+    case gray = "グレー"
+    case white = "白"
+    case black = "黒"
+    case checkerboard = "チェッカー"
+
+    var id: String { rawValue }
+}
+
 struct ColorHex: Codable, Equatable {
     var value: String
 
@@ -152,6 +161,7 @@ struct ConversionSettings: Codable, Equatable {
     var resizeMode: ResizeMode = .fit
     var targetWidth: Int = 300
     var targetHeight: Int = 300
+    var previewBackground: PreviewBackground = .gray
     var pdfAutoTrimWhitespace: Bool = false
     var paddingEnabled: Bool = false
     var paddingPixels: Int = 0
@@ -171,6 +181,7 @@ struct ConversionSettings: Codable, Equatable {
         resizeMode = try container.decodeIfPresent(ResizeMode.self, forKey: .resizeMode) ?? .fit
         targetWidth = try container.decodeIfPresent(Int.self, forKey: .targetWidth) ?? 300
         targetHeight = try container.decodeIfPresent(Int.self, forKey: .targetHeight) ?? 300
+        previewBackground = try container.decodeIfPresent(PreviewBackground.self, forKey: .previewBackground) ?? .gray
         pdfAutoTrimWhitespace = try container.decodeIfPresent(Bool.self, forKey: .pdfAutoTrimWhitespace) ?? false
         paddingEnabled = try container.decodeIfPresent(Bool.self, forKey: .paddingEnabled) ?? false
         paddingPixels = try container.decodeIfPresent(Int.self, forKey: .paddingPixels) ?? 0
