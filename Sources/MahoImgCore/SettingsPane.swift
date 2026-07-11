@@ -44,9 +44,9 @@ struct SettingsPane: View {
             }
 
             Section("リサイズ") {
-                Picker("モード", selection: $state.settings.resizeMode) {
+                Picker("出力方法", selection: $state.settings.resizeMode) {
                     ForEach(ResizeMode.allCases) { mode in
-                        Text(mode.rawValue)
+                        Text(mode.displayName)
                             .tag(mode)
                             .help(mode.helpText)
                     }
@@ -57,8 +57,22 @@ struct SettingsPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                PixelInputRow(label: "幅", value: $state.settings.targetWidth)
-                PixelInputRow(label: "高さ", value: $state.settings.targetHeight)
+                if let label = state.settings.resizeMode.widthLabel {
+                    PixelInputRow(label: label, value: $state.settings.targetWidth)
+                }
+                if let label = state.settings.resizeMode.heightLabel {
+                    PixelInputRow(label: label, value: $state.settings.targetHeight)
+                }
+
+                if state.settings.resizeMode == .canvasFit {
+                    ColorPicker("キャンバス背景", selection: canvasColorBinding, supportsOpacity: false)
+                    Label(
+                        "出力は常に \(safeTargetWidth) × \(safeTargetHeight) px になります。",
+                        systemImage: "rectangle.inset.filled"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
             }
 
             Section("PDF") {
@@ -81,10 +95,12 @@ struct SettingsPane: View {
                 }
             }
 
-            Section("余白") {
-                Toggle("余白を追加", isOn: $state.settings.paddingEnabled)
-                PixelInputRow(label: "幅", value: $state.settings.paddingPixels)
-                ColorPicker("色", selection: paddingColorBinding, supportsOpacity: false)
+            Section("外側の余白") {
+                Toggle("出力画像の外側に余白を追加", isOn: $state.settings.paddingEnabled)
+                if state.settings.paddingEnabled {
+                    PixelInputRow(label: "幅", value: $state.settings.paddingPixels)
+                    ColorPicker("余白の色", selection: paddingColorBinding, supportsOpacity: false)
+                }
             }
 
             Section("ファイル名") {
@@ -103,25 +119,36 @@ struct SettingsPane: View {
     }
 
     private var outputFolderPathLabel: some View {
-        Text(state.settings.chosenFolderPath.isEmpty ? "未選択" : state.settings.chosenFolderPath)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                isOutputFolderDropTargeted ? Color.accentColor.opacity(0.12) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 6)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(
-                        isOutputFolderDropTargeted ? Color.accentColor : Color.clear,
-                        style: StrokeStyle(lineWidth: 1, dash: [4])
-                    )
-            }
-            .help("保存先フォルダをドロップ")
+        Button {
+            guard let outputFolderURL else { return }
+            PlatformServices.openInFinder(outputFolderURL)
+        } label: {
+            Text(state.settings.chosenFolderPath.isEmpty ? "未選択" : state.settings.chosenFolderPath)
+                .font(.caption)
+                .foregroundStyle(outputFolderURL == nil ? .secondary : .primary)
+                .lineLimit(2)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    isOutputFolderDropTargeted ? Color.accentColor.opacity(0.12) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(
+                            isOutputFolderDropTargeted ? Color.accentColor : Color.clear,
+                            style: StrokeStyle(lineWidth: 1, dash: [4])
+                        )
+                }
+        }
+        .buttonStyle(.plain)
+        .onDrop(of: [.folder], isTargeted: $isOutputFolderDropTargeted, perform: handleOutputFolderDrop(providers:))
+        .help(outputFolderURL == nil ? "保存先フォルダをドロップ" : "クリックしてFinderで保存先を開く。保存先フォルダをドロップ")
+    }
+
+    private var outputFolderURL: URL? {
+        OutputFolder.existingDirectory(from: state.settings.chosenFolderPath)
     }
 
     private func handleOutputFolderDrop(providers: [NSItemProvider]) -> Bool {
@@ -163,6 +190,23 @@ struct SettingsPane: View {
                 state.settings.paddingColor = ColorHex(value: newColor.hexString)
             }
         )
+    }
+
+    private var canvasColorBinding: Binding<Color> {
+        Binding(
+            get: { Color(nsColor: state.settings.canvasColor.nsColor) },
+            set: { newColor in
+                state.settings.canvasColor = ColorHex(value: newColor.hexString)
+            }
+        )
+    }
+
+    private var safeTargetWidth: Int {
+        max(state.settings.targetWidth, 1)
+    }
+
+    private var safeTargetHeight: Int {
+        max(state.settings.targetHeight, 1)
     }
 }
 

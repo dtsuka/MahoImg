@@ -12,6 +12,12 @@ final class ResizeModeTests: XCTestCase {
         XCTAssertEqual(mode, .fillCrop)
         XCTAssertEqual(mode.rawValue, "外接")
     }
+
+    func testDecodesCanvasFitMode() throws {
+        let mode = try JSONDecoder().decode(ResizeMode.self, from: Data(#""キャンバスに内接""#.utf8))
+
+        XCTAssertEqual(mode, .canvasFit)
+    }
 }
 
 final class ConversionSettingsTests: XCTestCase {
@@ -27,6 +33,7 @@ final class ConversionSettingsTests: XCTestCase {
         let settings = try JSONDecoder().decode(ConversionSettings.self, from: data)
 
         XCTAssertEqual(settings.previewBackground, .gray)
+        XCTAssertEqual(settings.canvasColor, .white)
     }
 }
 
@@ -657,6 +664,43 @@ final class ImageProcessorTests: XCTestCase {
             "Lanczos",
             "-resize",
             "300x200^",
+            "-gravity",
+            "center",
+            "-extent",
+            "300x200",
+            "/tmp/out.png"
+        ])
+    }
+
+    func testBuildsCanvasFitArgumentsForFixedCanvas() {
+        var settings = ConversionSettings()
+        settings.outputFormat = .png
+        settings.resizeMode = .canvasFit
+        settings.targetWidth = 300
+        settings.targetHeight = 200
+        settings.canvasColor = ColorHex(value: "#ff00aa")
+
+        let args = ImageProcessor.arguments(
+            inputURL: URL(fileURLWithPath: "/tmp/in.jpg"),
+            outputURL: URL(fileURLWithPath: "/tmp/out.png"),
+            settings: settings,
+            cropRect: CropRect(x: 0, y: 0, width: 1200, height: 1200),
+            imageSize: CGSize(width: 1200, height: 1200),
+            source: .raster(URL(fileURLWithPath: "/tmp/in.jpg"))
+        )
+
+        XCTAssertEqual(args, [
+            "/tmp/in.jpg",
+            "-auto-orient",
+            "-crop",
+            "1200x1200+0+0",
+            "+repage",
+            "-filter",
+            "Lanczos",
+            "-resize",
+            "300x200",
+            "-background",
+            "#ff00aa",
             "-gravity",
             "center",
             "-extent",

@@ -19,6 +19,10 @@ enum PlatformServices {
         return url.path
     }
 
+    static func openInFinder(_ url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+
     @MainActor
     static func openFiles() -> [URL] {
         let panel = NSOpenPanel()

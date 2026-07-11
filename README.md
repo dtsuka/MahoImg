@@ -15,7 +15,7 @@ MahoImg is a macOS app for converting images and PDFs in batches. It can export 
 - 複数ファイルやフォルダをまとめて追加できます。
 - PDF はページを選んで 1 アイテムとして追加するか、全ページを個別アイテムとして追加できます。
 - PSD/PSB は統合済みの静止画として書き出します。
-- 画像を指定サイズに内接・外接させる、幅だけ指定する、高さだけ指定する、強制的に幅高さを合わせる、といったリサイズができます。
+- リサイズは、最大サイズに収める、固定キャンバスに内接して背景色で余白を埋める、外接して切り抜く、幅または高さだけを指定する、幅高さを強制的に合わせる、といった方式を選べます。
 - プレビュー上でトリミング範囲を調整できます。
 - プレビューをズーム・パンし、全体表示や実寸表示へ切り替えられます。
 - 余白と余白色を指定できます。
@@ -27,7 +27,7 @@ MahoImg is a macOS app for converting images and PDFs in batches. It can export 
 - Adds multiple files or folders at once.
 - For PDFs, you can add one selectable-page item or add every page as a separate item.
 - Exports PSD/PSB files as flattened still images.
-- Supports several resize modes: fit inside or cover a size, width only, height only, exact width and height, and more.
+- Supports several resize modes: fit within a maximum size, fit inside a fixed canvas with a background color, cover and crop, width only, height only, and exact width and height.
 - Lets you adjust the crop area in the preview.
 - Supports zooming and panning the preview, including fit and actual-size views.
 - Can add padding with a selected color.
@@ -38,7 +38,7 @@ MahoImg is a macOS app for converting images and PDFs in batches. It can export 
 
 1. アプリを開きます。
 2. 左上の `+` ボタン、またはウィンドウへのドラッグ&ドロップで画像やフォルダを追加します。
-3. 右側のパネルで出力形式、品質、リサイズ、トリミング、余白、保存先、ファイル名を設定します。
+3. 右側のパネルで出力形式、品質、リサイズ、トリミング、余白、保存先、ファイル名を設定します。選択した保存先のパスをクリックすると、Finder でフォルダを開けます。
 4. PDF が複数ページの場合は、追加時に「ページを選んで追加」または「全ページを追加」を選びます。
 5. 左サイドバー下部の `一括変換` を押すと、リスト内のすべての画像を変換します。
 6. プレビュー下部の `個別変換` を押すと、現在選択中の画像だけを変換します。
@@ -46,7 +46,7 @@ MahoImg is a macOS app for converting images and PDFs in batches. It can export 
 
 1. Open the app.
 2. Add images or folders with the `+` button or by dropping them onto the window.
-3. Use the right-side panel to choose output format, quality, resize, crop, padding, save location, and filename options.
+3. Use the right-side panel to choose output format, quality, resize, crop, padding, save location, and filename options. Click the selected save path to open its folder in Finder.
 4. For multi-page PDFs, choose either "add as one selectable-page item" or "add every page".
 5. Press `一括変換` at the bottom of the left sidebar to convert every image in the list.
 6. Press `個別変換` below the preview to convert only the currently selected image.
