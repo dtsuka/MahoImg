@@ -153,6 +153,14 @@ struct ImageProcessor {
             break
         case .fit:
             args += ["-filter", "Lanczos", "-resize", "\(width)x\(height)"]
+        case .canvasFit:
+            args += [
+                "-filter", "Lanczos",
+                "-resize", "\(width)x\(height)",
+                "-background", settings.canvasColor.value,
+                "-gravity", "center",
+                "-extent", "\(width)x\(height)"
+            ]
         case .fillCrop:
             args += ["-filter", "Lanczos", "-resize", "\(width)x\(height)^", "-gravity", "center", "-extent", "\(width)x\(height)"]
         case .width:

@@ -20,6 +20,7 @@ enum OutputFormat: String, CaseIterable, Codable, Identifiable {
 enum ResizeMode: String, CaseIterable, Codable, Identifiable {
     case none = "しない"
     case fit = "内接"
+    case canvasFit = "キャンバスに内接"
     case fillCrop = "外接"
     case width = "幅指定"
     case height = "高さ指定"
@@ -27,12 +28,33 @@ enum ResizeMode: String, CaseIterable, Codable, Identifiable {
 
     var id: String { rawValue }
 
+    var displayName: String {
+        switch self {
+        case .none:
+            "リサイズしない"
+        case .fit:
+            "最大サイズに収める"
+        case .canvasFit:
+            "キャンバスに内接（余白あり）"
+        case .fillCrop:
+            "キャンバスを埋める（切り抜き）"
+        case .width:
+            "幅を指定"
+        case .height:
+            "高さを指定"
+        case .exact:
+            "指定サイズに変形"
+        }
+    }
+
     var helpText: String {
         switch self {
         case .none:
             "元画像のピクセルサイズを維持します。"
         case .fit:
-            "指定した幅と高さの内側に、縦横比を維持して画像全体を収めます。"
+            "指定した最大幅・最大高さの内側に、縦横比を維持して画像全体を収めます。出力サイズは画像の比率に応じて変わります。"
+        case .canvasFit:
+            "指定したキャンバスの内側に、縦横比を維持して画像全体を収めます。余った部分は背景色で埋め、出力は必ず指定サイズになります。"
         case .fillCrop:
             "指定サイズを覆うまで縦横比を維持して拡大縮小し、はみ出した部分を中央で切り落とします。"
         case .width:
@@ -41,6 +63,36 @@ enum ResizeMode: String, CaseIterable, Codable, Identifiable {
             "高さを指定値に合わせ、幅は縦横比から自動計算します。"
         case .exact:
             "指定した幅と高さに強制変形します。縦横比が変わる場合があります。"
+        }
+    }
+
+    var widthLabel: String? {
+        switch self {
+        case .none, .height:
+            nil
+        case .fit:
+            "最大幅"
+        case .canvasFit:
+            "キャンバス幅"
+        case .fillCrop, .exact:
+            "出力幅"
+        case .width:
+            "幅"
+        }
+    }
+
+    var heightLabel: String? {
+        switch self {
+        case .none, .width:
+            nil
+        case .fit:
+            "最大高さ"
+        case .canvasFit:
+            "キャンバス高さ"
+        case .fillCrop, .exact:
+            "出力高さ"
+        case .height:
+            "高さ"
         }
     }
 
@@ -166,6 +218,7 @@ struct ConversionSettings: Codable, Equatable {
     var paddingEnabled: Bool = false
     var paddingPixels: Int = 0
     var paddingColor: ColorHex = .white
+    var canvasColor: ColorHex = .white
     var saveLocation: SaveLocation = .original
     var chosenFolderPath: String = ""
     var prefix: String = ""
@@ -186,6 +239,7 @@ struct ConversionSettings: Codable, Equatable {
         paddingEnabled = try container.decodeIfPresent(Bool.self, forKey: .paddingEnabled) ?? false
         paddingPixels = try container.decodeIfPresent(Int.self, forKey: .paddingPixels) ?? 0
         paddingColor = try container.decodeIfPresent(ColorHex.self, forKey: .paddingColor) ?? .white
+        canvasColor = try container.decodeIfPresent(ColorHex.self, forKey: .canvasColor) ?? .white
         saveLocation = try container.decodeIfPresent(SaveLocation.self, forKey: .saveLocation) ?? .original
         chosenFolderPath = try container.decodeIfPresent(String.self, forKey: .chosenFolderPath) ?? ""
         prefix = try container.decodeIfPresent(String.self, forKey: .prefix) ?? ""
