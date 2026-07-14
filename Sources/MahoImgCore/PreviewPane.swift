@@ -447,9 +447,6 @@ private final class PreviewCanvasView: NSView {
         NSColor.black.withAlphaComponent(0.22).setFill()
         dimPath.fill()
 
-        NSColor.controlAccentColor.withAlphaComponent(0.06).setFill()
-        NSBezierPath(rect: cropFrame).fill()
-
         NSColor.controlAccentColor.setStroke()
         let border = NSBezierPath(rect: cropFrame)
         border.lineWidth = 2
